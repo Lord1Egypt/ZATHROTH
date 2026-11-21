@@ -3,6 +3,7 @@
 local commands = {
 	{ words = "/setatkspeed", rate = "attackspeed", description = "[Usage]: /setatkspeed <multiplier>, player attack speed for the whole server (attacks cannot be faster than every 50 ms)" },
 	{ words = "/lootrate", rate = "loot", description = "[Usage]: /lootrate <multiplier>, loot rate for the whole server" },
+	{ words = "/exprate", rate = "exp", description = "[Usage]: /exprate <multiplier>, experience rate for the whole server" },
 }
 
 for _, command in ipairs(commands) do

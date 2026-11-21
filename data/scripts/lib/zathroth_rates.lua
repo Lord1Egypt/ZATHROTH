@@ -1,7 +1,9 @@
--- Server-wide multipliers set by /setatkspeed, /spawn <number> and /lootrate.
+-- Server-wide multipliers set by /setatkspeed, /spawn <number>, /lootrate
+-- and /exprate.
 -- They are saved in the KV store and restored when the server starts
 -- (data/scripts/globalevents/zathroth_rates.lua). 1 means normal.
 ZATHROTH_LOOT_RATE = 1
+ZATHROTH_EXP_RATE = 1
 ZATHROTH_MAX_RATE = 1000
 
 ZATHROTH_RATES = {
@@ -24,6 +26,13 @@ ZATHROTH_RATES = {
 		label = "loot rate",
 		apply = function(rate)
 			ZATHROTH_LOOT_RATE = rate
+		end,
+	},
+	exp = {
+		key = "exp",
+		label = "experience rate",
+		apply = function(rate)
+			ZATHROTH_EXP_RATE = rate
 		end,
 	},
 }

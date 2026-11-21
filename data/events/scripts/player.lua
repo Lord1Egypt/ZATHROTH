@@ -596,8 +596,9 @@ function Player:onGainExperience(target, exp, rawExp)
 	local lowLevelBonusExp = self:getFinalLowLevelBonus()
 	local baseRateExp = self:getFinalBaseRateExperience()
 
-	-- Return final experience value
-	return (exp * (1 + xpBoostPercent / 100 + lowLevelBonusExp / 100)) * staminaBonusXp * baseRateExp
+	-- Return final experience value; ZATHROTH_EXP_RATE is set by /exprate
+	-- (data/scripts/lib/zathroth_rates.lua).
+	return (exp * (1 + xpBoostPercent / 100 + lowLevelBonusExp / 100)) * staminaBonusXp * baseRateExp * (ZATHROTH_EXP_RATE or 1)
 end
 
 function Player:onLoseExperience(exp)
