@@ -47,7 +47,7 @@ The global Git, commit, PR, C++ header, exception, and documentation policies ap
 
 ## Docker Deployment
 
-- Use the root `compose.yaml` and Dockerfile for the ZATHROTH deployment. The game and account service share the SQLite volume.
+- Use the root `compose.yaml` and Dockerfile for the ZATHROTH deployment. Compose bind-mounts the cloned folder into both services, so the game and account service share `database/zathroth.sqlite3` and read scripts from the clone.
 - Use the account service at `http://<host>:8088/login` for modern client login. Verify both image architectures with the container workflow.
 
 ## ZATHROTH
