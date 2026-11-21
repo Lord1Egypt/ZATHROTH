@@ -77,13 +77,12 @@ bool KVSQL::prepareSave(const std::string &key, const ValueWrapper &value, DBIns
 		return db.executeQuery(query);
 	}
 
-	update.addRow(fmt::format("{}, {}, {}", db.escapeString(key), value.getTimestamp(), db.escapeString(data)));
-	return true;
+	return update.addRow(fmt::format("{}, {}, {}", db.escapeString(key), value.getTimestamp(), db.escapeBlob(data.data(), static_cast<uint32_t>(data.size()))));
 }
 
 bool KVSQL::saveAll() {
 	auto store = getStore();
-	const bool success = DBTransaction::executeWithinTransaction([this, &store]() {
+	const bool success = DBTransaction::executeWithinTransactionRollbackOnFailure([this, &store]() {
 		auto update = dbUpdate();
 		if (!std::ranges::all_of(store, [this, &update](const auto &kv) {
 				const auto &[key, value] = kv;

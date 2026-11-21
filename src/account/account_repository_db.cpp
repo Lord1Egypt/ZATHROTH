@@ -20,7 +20,7 @@
 AccountRepositoryDB::AccountRepositoryDB() {
 	coinTypeToColumn = {
 		{ CoinType::Normal, "coins" },
-		{ CoinType::Tournament, "coins_tournament" },
+		{ CoinType::Tournament, "tournament_coins" },
 		{ CoinType::Transferable, "coins_transferable" }
 	};
 }
@@ -169,7 +169,7 @@ AccountErrors_t AccountRepositoryDB::removeCoins(
 	AccountErrors_t result = Storage;
 	const bool success = DBTransaction::executeWithinTransactionRollbackOnFailure([&]() {
 		const auto accountCoins = g_database().storeQuery(fmt::format(
-			"SELECT `{}`, `{}` FROM `accounts` WHERE `id` = {} FOR UPDATE",
+			"SELECT `{}`, `{}` FROM `accounts` WHERE `id` = {}",
 			primaryColumn->second,
 			secondaryColumn->second,
 			id

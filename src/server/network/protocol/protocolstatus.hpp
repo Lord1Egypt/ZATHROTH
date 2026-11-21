@@ -34,7 +34,6 @@ public:
 
 	static std::string SERVER_NAME;
 	static std::string SERVER_VERSION;
-	static std::string SERVER_DEVELOPERS;
 
 private:
 	// Upper bound on the entries one status query examines while pruning. Each

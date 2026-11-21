@@ -1,4 +1,4 @@
-local npcName = "Canary"
+local npcName = "Zathroth"
 
 local npcType = Game.createNpcType(npcName)
 local npcConfig = {}
@@ -35,7 +35,7 @@ npcConfig.sounds = {
 npcConfig.voices = {
 	interval = 15000,
 	chance = 20,
-	{ text = "Welcome to the Canary Server!" },
+	{ text = "Welcome to ZATHROTH!" },
 }
 
 npcConfig.flags = {
@@ -144,7 +144,7 @@ node1:addChildKeyword({ "no" }, StdModule.say, {
 
 -- Function called by the callback "npcHandler:setCallback(CALLBACK_GREET, greetCallback)" in end of file
 local function greetCallback(npc, player)
-	npcHandler:setMessage(MESSAGE_GREET, "Hello |PLAYERNAME|, you need more info about {canary}?")
+	npcHandler:setMessage(MESSAGE_GREET, "Hello |PLAYERNAME|, would you like to know more about {ZATHROTH}?")
 	return true
 end
 
@@ -155,21 +155,8 @@ local function creatureSayCallback(npc, player, type, msg)
 		return false
 	end
 
-	if MsgContains(msg, "canary") then
-		if npcHandler:getTopic(playerId) == 0 then
-			npcHandler:say({
-				"The goal is for Canary to be an 'engine', that is, it will be \z
-					a server with a 'clean' datapack, with as few things as possible, \z
-					thus facilitating development and testing.",
-				"See more on our {discord group}.",
-			}, npc, player, 3000)
-			npcHandler:setTopic(playerId, 1)
-		end
-	elseif MsgContains(msg, "discord group") then
-		if npcHandler:getTopic(playerId) == 1 then
-			npcHandler:say("This the our discord group link: {https://discordapp.com/invite/3NxYnyV}", npc, player)
-			npcHandler:setTopic(playerId, 0)
-		end
+	if MsgContains(msg, "zathroth") then
+		npcHandler:say("Welcome to ZATHROTH. For help, contact akim.221992@gmail.com.", npc, player)
 	end
 	return true
 end

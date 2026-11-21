@@ -46,6 +46,7 @@ bool ConfigManager::load() {
 		loadBoolConfig(L, OPTIMIZE_DATABASE, "startupDatabaseOptimization", true);
 		loadBoolConfig(L, RANDOM_MONSTER_SPAWN, "randomMonsterSpawn", false);
 		loadBoolConfig(L, RESET_SESSIONS_ON_STARTUP, "resetSessionsOnStartup", false);
+		loadBoolConfig(L, SQLITE_DB_BACKUP, "sqliteDatabaseBackup", false);
 		loadBoolConfig(L, TOGGLE_MAINTAIN_MODE, "toggleMaintainMode", false);
 		loadBoolConfig(L, TOGGLE_MAP_CUSTOM, "toggleMapCustom", true);
 
@@ -61,7 +62,6 @@ bool ConfigManager::load() {
 		loadIntConfig(L, MARKET_OFFER_DURATION, "marketOfferDuration", 30 * 24 * 60 * 60);
 		loadIntConfig(L, MARKET_REFRESH_PRICES, "marketRefreshPricesInterval", 30);
 		loadIntConfig(L, PREMIUM_DEPOT_LIMIT, "premiumDepotLimit", 8000);
-		loadIntConfig(L, SQL_PORT, "mysqlPort", 3306);
 		loadIntConfig(L, STATUS_PORT, "statusProtocolPort", 7171);
 
 		loadStringConfig(L, AUTH_TYPE, "authType", "password");
@@ -71,12 +71,7 @@ bool ConfigManager::load() {
 		loadStringConfig(L, MAP_AUTHOR, "mapAuthor", "Eduardo Dantas");
 		loadStringConfig(L, MAP_DOWNLOAD_URL, "mapDownloadUrl", "");
 		loadStringConfig(L, MAP_NAME, "mapName", "canary");
-		loadStringConfig(L, MYSQL_DB, "mysqlDatabase", "canary");
-		loadBoolConfig(L, MYSQL_DB_BACKUP, "mysqlDatabaseBackup", false);
-		loadStringConfig(L, MYSQL_HOST, "mysqlHost", "127.0.0.1");
-		loadStringConfig(L, MYSQL_PASS, "mysqlPass", "");
-		loadStringConfig(L, MYSQL_SOCK, "mysqlSock", "");
-		loadStringConfig(L, MYSQL_USER, "mysqlUser", "root");
+		loadStringConfig(L, SQLITE_DB, "sqliteDatabase", "zathroth.sqlite3");
 	}
 
 	loadBoolConfig(L, AIMBOT_HOTKEY_ENABLED, "hotkeyAimbotEnabled", true);

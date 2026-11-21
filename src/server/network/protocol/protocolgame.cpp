@@ -924,6 +924,9 @@ void ProtocolGame::release() {
 		player = nullptr;
 	} else if (player && player->client == shared_from_this()) {
 		g_livestream().stopBroadcast(player, true);
+		if (player->isDead()) {
+			IOLoginData::clearPlayerLogin(player->getGUID());
+		}
 		player->client.reset();
 		player = nullptr;
 	}
@@ -1047,6 +1050,11 @@ void ProtocolGame::login(const std::string &name, uint32_t accountId, OperatingS
 			}
 		}
 
+		if (!IOLoginData::reservePlayerLogin(player->getGUID(), accountId)) {
+			disconnectClient("Your character is currently unavailable.");
+			return;
+		}
+
 		const bool suppressPreLoginPacketsBeforePlacement = isCipsoft860Profile(protocolProfile);
 		const bool previousSuppressPreLoginPackets = suppressPreLoginPackets;
 		if (suppressPreLoginPacketsBeforePlacement) {
@@ -1056,6 +1064,7 @@ void ProtocolGame::login(const std::string &name, uint32_t accountId, OperatingS
 		const bool placedCreature = g_game().placeCreature(player, player->getLoginPosition()) || g_game().placeCreature(player, player->getTemplePosition(), false, true);
 		suppressPreLoginPackets = previousSuppressPreLoginPackets;
 		if (!placedCreature) {
+			IOLoginData::clearPlayerLogin(player->getGUID());
 			disconnectClient("Temple position is wrong. Please, contact the administrator.");
 			g_logger().warn("Player {} temple position is wrong", player->getName());
 			return;

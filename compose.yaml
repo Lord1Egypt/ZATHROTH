@@ -1,0 +1,72 @@
+name: zathroth
+
+x-runtime: &runtime
+  image: "${ZATHROTH_IMAGE:-ghcr.io/lord1egypt/zathroth:latest}"
+  restart: unless-stopped
+  init: true
+  volumes:
+    - world:/var/lib/zathroth
+
+x-bind-ip: &bind-ip "${ZATHROTH_BIND_IP:-${ZATHROTH_SERVER_IP:-192.168.1.104}}"
+x-network-config: &network-config
+  ZATHROTH_SERVER_IP: "${ZATHROTH_SERVER_IP:-192.168.1.104}"
+  ZATHROTH_GAME_PORT: "${ZATHROTH_GAME_PORT:-7172}"
+  ZATHROTH_ACCOUNT_PORT: "${ZATHROTH_ACCOUNT_PORT:-8088}"
+
+services:
+  game:
+    <<: *runtime
+    stop_grace_period: 45s
+    environment:
+      <<: *network-config
+      ZATHROTH_LOGIN_PORT: "${ZATHROTH_LOGIN_PORT:-7171}"
+    ports:
+      - host_ip: *bind-ip
+        published: "${ZATHROTH_LOGIN_PORT:-7171}"
+        target: "${ZATHROTH_LOGIN_PORT:-7171}"
+      - host_ip: *bind-ip
+        published: "${ZATHROTH_GAME_PORT:-7172}"
+        target: "${ZATHROTH_GAME_PORT:-7172}"
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - |
+          import os
+          import socket
+          port = int(os.environ["ZATHROTH_GAME_PORT"])
+          socket.create_connection(("127.0.0.1", port), timeout=2).close()
+      interval: 5s
+      timeout: 3s
+      retries: 8
+      start_period: 90s
+
+  accounts:
+    <<: *runtime
+    entrypoint: ["python3", "account_manager/server.py"]
+    environment:
+      <<: *network-config
+    ports:
+      - host_ip: *bind-ip
+        published: "${ZATHROTH_ACCOUNT_PORT:-8088}"
+        target: "${ZATHROTH_ACCOUNT_PORT:-8088}"
+    depends_on:
+      game:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - |
+          import os
+          import urllib.request
+          port = os.environ["ZATHROTH_ACCOUNT_PORT"]
+          urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2).close()
+      interval: 5s
+      timeout: 3s
+      retries: 6
+
+volumes:
+  world:

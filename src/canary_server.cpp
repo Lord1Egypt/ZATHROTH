@@ -346,6 +346,25 @@ void CanaryServer::loadMaps() const {
 			g_game().loadCustomMaps(g_configManager().getString(DATA_DIRECTORY) + "/world/custom/");
 		}
 		Zone::refreshAll();
+
+		auto &db = g_database();
+		const bool townsSaved = DBTransaction::executeWithinTransactionRollbackOnFailure([&db]() {
+			if (!db.executeQuery("DELETE FROM `towns`") || !db.executeQuery("DELETE FROM `players_online`")) {
+				return false;
+			}
+
+			DBInsert insert("INSERT INTO `towns` (`id`, `name`, `posx`, `posy`, `posz`) VALUES");
+			for (const auto &[id, town] : g_game().map.towns.getTowns()) {
+				const auto &position = town->getTemplePosition();
+				if (!insert.addRow(fmt::format("{}, {}, {}, {}, {}", id, db.escapeString(town->getName()), position.x, position.y, position.z))) {
+					return false;
+				}
+			}
+			return insert.execute();
+		});
+		if (!townsSaved) {
+			throw FailedToInitializeCanary("Failed to synchronize map towns and online players with SQLite");
+		}
 	} catch (const std::exception &err) {
 		throw FailedToInitializeCanary(err.what());
 	}
@@ -384,9 +403,7 @@ void CanaryServer::logInfos() {
 
 	logger.info("Linked with {} for Lua support", getLuaRuntimeDisplayVersion());
 
-	logger.info("A server developed by: {}", ProtocolStatus::SERVER_DEVELOPERS);
-	logger.info("Visit our website for updates, support, and resources: "
-	            "https://docs.opentibiabr.com/");
+	logger.info("Compiled by Mohamed Mounir");
 }
 
 /**
@@ -422,6 +439,8 @@ std::string CanaryServer::getPlatform() {
 	return "x64";
 #elif defined(__i386__) || defined(_M_IX86) || defined(_X86_)
 	return "x86";
+#elif defined(__aarch64__) || defined(_M_ARM64)
+	return "ARM64";
 #elif defined(__arm__)
 	return "ARM";
 #else
@@ -462,6 +481,7 @@ void CanaryServer::loadConfigLua() {
 	g_configManager().setConfigFileLua(configName);
 
 	modulesLoadHelper(g_configManager().load(), g_configManager().getConfigFileLua());
+	logger.info("Contact: {}", g_configManager().getString(OWNER_EMAIL));
 
 #ifdef _WIN32
 	const std::string &defaultPriority = g_configManager().getString(DEFAULT_PRIORITY);
@@ -490,11 +510,11 @@ void CanaryServer::initializeDatabase() {
 	if (!Database::getInstance().connect()) {
 		throw FailedToInitializeCanary("Failed to connect to database!");
 	}
-	logger.info("MySQL Version: {}", Database::getClientVersion());
+	logger.info("SQLite version: {}", Database::getClientVersion());
 
 	logger.info("Running database manager...");
-	if (!DatabaseManager::isDatabaseSetup()) {
-		throw FailedToInitializeCanary(fmt::format("The database you have specified in {} is empty, please import the schema.sql to your database.", g_configManager().getConfigFileLua()));
+	if (!DatabaseManager::initializeDatabase()) {
+		throw FailedToInitializeCanary("Failed to initialize the SQLite database schema");
 	}
 
 	DatabaseManager::updateDatabase();

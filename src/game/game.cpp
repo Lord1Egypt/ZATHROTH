@@ -1609,11 +1609,10 @@ bool Game::removeCreature(const std::shared_ptr<Creature> &creature, bool isLogo
 		removeCreature(summon);
 	}
 
-	if (creature->getPlayer() && isLogout) {
-		auto it = teamFinderMap.find(creature->getPlayer()->getGUID());
-		if (it != teamFinderMap.end()) {
-			teamFinderMap.erase(it);
-		}
+	if (const auto &player = creature->getPlayer(); player && isLogout) {
+		const auto playerId = player->getGUID();
+		teamFinderMap.erase(playerId);
+		IOLoginData::clearPlayerLogin(playerId);
 	}
 
 	return true;
@@ -9903,59 +9902,32 @@ std::string Game::generateHighscoreQuery(
 		return "";
 	}
 
-	uint32_t startPage = (page - 1) * static_cast<uint32_t>(entriesPerPage);
-	uint32_t endPage = startPage + static_cast<uint32_t>(entriesPerPage);
-	std::string entriesStr = std::to_string(entriesPerPage);
-
-	const std::string vocationCondition = vocation != 0xFFFFFFFF ? generateVocationConditionHighscore(vocation) : "";
-	const std::string countVocationCondition = vocation != 0xFFFFFFFF ? generateVocationConditionHighscore(vocation, " AND ") : "";
-
+	const auto offset = (std::max<uint32_t>(page, 1) - 1) * static_cast<uint64_t>(entriesPerPage);
+	const auto vocationCondition = vocation != 0xFFFFFFFF ? generateVocationConditionHighscore(vocation, " AND ") : "";
 	std::string query = fmt::format(
-		"SELECT `id`, `name`, `level`, `vocation`, `points`, `rank`, `rn` AS `entries`, "
-		"(SELECT COUNT(*) FROM `players` WHERE `group_id` < {}{}) AS `total`, ",
-		static_cast<int>(GROUP_TYPE_GAMEMASTER),
-		countVocationCondition
+		"WITH ranked AS ("
+		"SELECT `id`, `name`, `level`, `vocation`, `{0}` AS points, "
+		"DENSE_RANK() OVER (ORDER BY `{0}` DESC) AS rank, "
+		"ROW_NUMBER() OVER (ORDER BY `{0}` DESC, `id`) AS rn, "
+		"COUNT(*) OVER () AS total "
+		"FROM `players` WHERE `group_id` < {1}{2}"
+		") ",
+		categoryName, static_cast<int>(GROUP_TYPE_GAMEMASTER), vocationCondition
 	);
-
-	if (playerGUID != 0) {
-		query += fmt::format("(@ourRow DIV {0}) + 1 AS `page` FROM (", entriesStr);
-	} else {
-		query += fmt::format("{} AS `page` FROM (", page);
-	}
-
-	query += fmt::format(
-		"SELECT `id`, `name`, `level`, `vocation`, `{}` AS `points`, "
-		"@curRank := IF(@prevRank = `{}`, @curRank, IF(@prevRank := `{}`, @curRank + 1, @curRank + 1)) AS `rank`, "
-		"(@row := @row + 1) AS `rn`",
-		categoryName, categoryName, categoryName
-	);
-
-	if (playerGUID != 0) {
-		query += fmt::format(", @ourRow := IF(`id` = {}, @row - 1, @ourRow) AS `rw`", playerGUID);
-	}
-
-	query += fmt::format(
-		" FROM (SELECT `id`, `name`, `level`, `vocation`, `{}` FROM `players` `p`, "
-		"(SELECT @curRank := 0, @prevRank := NULL, @row := 0, @ourRow := 0) `r` "
-		"WHERE `group_id` < {} ORDER BY `{}` DESC) `t`",
-		categoryName, static_cast<int>(GROUP_TYPE_GAMEMASTER), categoryName
-	);
-
-	if (vocation != 0xFFFFFFFF) {
-		query += vocationCondition;
-	}
-
-	query += ") `T` WHERE ";
 
 	if (playerGUID != 0) {
 		query += fmt::format(
-			"`rn` > ((@ourRow DIV {0}) * {0}) AND `rn` <= (((@ourRow DIV {0}) * {0}) + {0})",
-			entriesStr
+			", selected AS (SELECT COALESCE((SELECT (rn - 1) / {0} FROM ranked WHERE `id` = {1}), 0) AS current_page) "
+			"SELECT ranked.*, rn AS entries, current_page + 1 AS page FROM ranked, selected "
+			"WHERE rn > current_page * {0} AND rn <= (current_page + 1) * {0} ORDER BY rn",
+			entriesPerPage, playerGUID
 		);
 	} else {
-		query += fmt::format("`rn` > {} AND `rn` <= {}", startPage, endPage);
+		query += fmt::format(
+			"SELECT ranked.*, rn AS entries, {} AS page FROM ranked ORDER BY rn LIMIT {} OFFSET {}",
+			std::max<uint32_t>(page, 1), entriesPerPage, offset
+		);
 	}
-
 	return query;
 }
 
@@ -12606,45 +12578,28 @@ const std::unordered_map<uint16_t, std::string> &Game::getHirelingOutfits() {
 }
 
 void Game::updatePlayersOnline() const {
-	// Function to be executed within the transaction
 	auto updateOperation = [this]() {
-		const auto &m_players = getPlayers();
-
-		// g_metrics().addUpDownCounter("players_online", 1);
-		// g_metrics().addUpDownCounter("players_online", -1);
-
-		if (m_players.empty()) {
-			auto result = g_database().storeQuery("SELECT COUNT(*) AS count FROM players_online;");
-			if (!result) {
-				g_logger().error("[Game::updatePlayersOnline] Failed to count players_online records.");
-				return false;
+		const auto &onlinePlayers = getPlayers();
+		std::vector<uint32_t> onlinePlayerIds;
+		onlinePlayerIds.reserve(onlinePlayers.size() + m_deadPlayers.size());
+		for (const auto &player : onlinePlayers | std::views::values) {
+			onlinePlayerIds.emplace_back(player->getGUID());
+		}
+		for (const auto &weakPlayer : m_deadPlayers | std::views::values) {
+			if (const auto player = weakPlayer.lock(); player && player->client) {
+				onlinePlayerIds.emplace_back(player->getGUID());
 			}
-
-			if (result->getNumber<int>("count") == 0) {
-				return true;
-			}
-
-			if (!g_database().executeQuery("DELETE FROM `players_online`;")) {
-				g_logger().error("[Game::updatePlayersOnline] Failed to clear players_online records.");
-				return false;
-			}
-
-			return true;
+		}
+		if (onlinePlayerIds.empty()) {
+			return g_database().executeQuery("DELETE FROM `players_online`");
 		}
 
-		// Insert the current players
-		DBInsert stmt("INSERT IGNORE INTO `players_online` (`player_id`) VALUES ");
-		std::vector<uint32_t> onlinePlayerIds;
-		onlinePlayerIds.reserve(m_players.size());
-
-		for (const auto &player : m_players | std::views::values) {
-			const auto playerGuid = player->getGUID();
+		DBInsert stmt("INSERT OR IGNORE INTO `players_online` (`player_id`) VALUES ");
+		for (const auto playerGuid : onlinePlayerIds) {
 			if (!stmt.addRow(fmt::format("{}", playerGuid))) {
 				g_logger().error("[Game::updatePlayersOnline] Failed to add players_online insert row.");
 				return false;
 			}
-
-			onlinePlayerIds.emplace_back(playerGuid);
 		}
 
 		if (!stmt.execute()) {

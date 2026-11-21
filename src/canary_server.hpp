@@ -21,7 +21,7 @@ private:
 public:
 	// Constructor accepts a specific message
 	explicit FailedToInitializeCanary(const std::string &msg) :
-		message("Canary load couldn't be completed. " + msg) { }
+		message("ZATHROTH could not start. " + msg) { }
 
 	// Override the what() method from std::exception
 	const char* what() const noexcept override {

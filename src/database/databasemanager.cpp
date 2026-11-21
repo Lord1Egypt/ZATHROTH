@@ -13,6 +13,14 @@
 #include "lua/functions/core/libs/core_libs_functions.hpp"
 #include "lua/scripts/luascript.hpp"
 
+#ifndef USE_PRECOMPILED_HEADERS
+	#include <algorithm>
+	#include <filesystem>
+	#include <fstream>
+	#include <regex>
+	#include <fmt/format.h>
+#endif
+
 namespace InternalDBManager {
 	int32_t extractVersionFromFilename(const std::string &filename) {
 		std::regex versionRegex(R"((\d+)\.lua)");
@@ -27,62 +35,50 @@ namespace InternalDBManager {
 }
 
 bool DatabaseManager::optimizeTables() {
-	Database &db = Database::getInstance();
-	std::ostringstream query;
-
-	query << "SELECT `TABLE_NAME` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = " << db.escapeString(g_configManager().getString(MYSQL_DB)) << " AND `DATA_FREE` > 0";
-	DBResult_ptr result = db.storeQuery(query.str());
-	if (!result) {
-		return false;
-	}
-
-	do {
-		std::string tableName = result->getString("TABLE_NAME");
-
-		query.str(std::string());
-		query << "OPTIMIZE TABLE `" << tableName << '`';
-
-		std::string tableResult;
-		if (db.executeQuery(query.str())) {
-			tableResult = "[Success]";
-		} else {
-			tableResult = "[Failed]";
-		}
-
-		g_logger().info("Optimizing table {}... {}", tableName, tableResult);
-	} while (result->next());
-
-	return true;
+	return g_database().executeQuery("PRAGMA optimize");
 }
 
 bool DatabaseManager::tableExists(const std::string &tableName) {
-	Database &db = Database::getInstance();
-
-	std::ostringstream query;
-	query << "SELECT `TABLE_NAME` FROM `information_schema`.`tables` WHERE `TABLE_SCHEMA` = " << db.escapeString(g_configManager().getString(MYSQL_DB)) << " AND `TABLE_NAME` = " << db.escapeString(tableName) << " LIMIT 1";
-	return db.storeQuery(query.str()).get() != nullptr;
+	auto &db = g_database();
+	return db.storeQuery("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = " + db.escapeString(tableName) + " COLLATE NOCASE LIMIT 1") != nullptr;
 }
 
-bool DatabaseManager::isDatabaseSetup() {
-	Database &db = Database::getInstance();
-	std::ostringstream query;
-	query << "SELECT `TABLE_NAME` FROM `information_schema`.`tables` WHERE `TABLE_SCHEMA` = " << db.escapeString(g_configManager().getString(MYSQL_DB));
-	return db.storeQuery(query.str()).get() != nullptr;
+bool DatabaseManager::initializeDatabase(const std::string &schemaPath) {
+	// Historical migrations through version 59 target MySQL. A new SQLite
+	// database starts at this baseline and only applies later migrations.
+	constexpr int32_t sqliteBaselineVersion = 59;
+	auto &db = g_database();
+	return DBTransaction::executeWithinTransactionRollbackOnFailure([&]() {
+		if (!tableExists("server_config")) {
+			if (db.storeQuery("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name NOT GLOB 'sqlite_*' LIMIT 1")) {
+				g_logger().error("SQLite database has tables but no server_config; database schema is unrecognized");
+				return false;
+			}
+			std::ifstream schema(schemaPath, std::ios::binary);
+			if (!schema) {
+				g_logger().error("Could not read SQLite schema from '{}'", schemaPath);
+				return false;
+			}
+			std::ostringstream contents;
+			contents << schema.rdbuf();
+			if (schema.bad() || !db.executeScript(contents.str())) {
+				return false;
+			}
+		}
+
+		const auto version = getDatabaseVersion();
+		if (version < sqliteBaselineVersion || !tableExists("accounts") || !tableExists("players")) {
+			g_logger().error("Unsupported SQLite database schema version {}", version);
+			return false;
+		}
+		return true;
+	});
 }
 
 int32_t DatabaseManager::getDatabaseVersion() {
-	if (!tableExists("server_config")) {
-		Database &db = Database::getInstance();
-		db.executeQuery("CREATE TABLE `server_config` (`config` VARCHAR(50) NOT NULL, `value` VARCHAR(256) NOT NULL DEFAULT '', UNIQUE(`config`)) ENGINE = InnoDB");
-		db.executeQuery("INSERT INTO `server_config` VALUES ('db_version', 0)");
-		return 0;
-	}
-
-	int32_t version = 0;
-	if (getDatabaseConfig("db_version", version)) {
-		return version;
-	}
-	return -1;
+	int32_t version = -1;
+	getDatabaseConfig("db_version", version);
+	return version;
 }
 
 void DatabaseManager::updateDatabase() {
@@ -99,6 +95,11 @@ void DatabaseManager::updateDatabase() {
 	std::string migrationDirectory = g_configManager().getString(DATA_DIRECTORY) + "/migrations/";
 
 	std::vector<std::pair<int32_t, std::string>> migrations;
+
+	if (!std::filesystem::is_directory(migrationDirectory)) {
+		lua_close(L);
+		return;
+	}
 
 	for (const auto &entry : std::filesystem::directory_iterator(migrationDirectory)) {
 		if (entry.is_regular_file()) {
@@ -118,6 +119,7 @@ void DatabaseManager::updateDatabase() {
 
 			if (luaL_dofile(L, scriptPath.c_str()) != 0) {
 				g_logger().error("DatabaseManager::updateDatabase - Version: {}] {}", fileVersion, lua_tostring(L, -1));
+				LuaScriptInterface::resetScriptEnv();
 				continue;
 			}
 
@@ -160,16 +162,10 @@ bool DatabaseManager::getDatabaseConfig(const std::string &config, int32_t &valu
 }
 
 void DatabaseManager::registerDatabaseConfig(const std::string &config, int32_t value) {
-	Database &db = Database::getInstance();
-	std::ostringstream query;
-
-	int32_t tmp;
-
-	if (!getDatabaseConfig(config, tmp)) {
-		query << "INSERT INTO `server_config` VALUES (" << db.escapeString(config) << ", '" << value << "')";
-	} else {
-		query << "UPDATE `server_config` SET `value` = '" << value << "' WHERE `config` = " << db.escapeString(config);
-	}
-
-	db.executeQuery(query.str());
+	auto &db = g_database();
+	db.executeQuery(fmt::format(
+		"INSERT INTO `server_config` (`config`, `value`) VALUES ({}, {}) "
+		"ON CONFLICT (`config`) DO UPDATE SET `value` = excluded.`value`",
+		db.escapeString(config), value
+	));
 }

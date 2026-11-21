@@ -1,151 +1,64 @@
-# Canary
+# ZATHROTH
 
-[![Discord](https://img.shields.io/discord/528117503952551936.svg?style=flat-square&logo=discord)](https://discord.gg/gvTj5sh9Mp)
-[![CI](https://github.com/opentibiabr/canary/actions/workflows/ci.yml/badge.svg)](https://github.com/opentibiabr/canary/actions/workflows/ci.yml)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=opentibiabr_canary&metric=alert_status)](https://sonarcloud.io/dashboard?id=opentibiabr_canary)
-![Repository size](https://img.shields.io/github/repo-size/opentibiabr/canary)
-[![License](https://img.shields.io/github/license/opentibiabr/canary.svg)](https://github.com/opentibiabr/canary/blob/main/LICENSE)
+ZATHROTH is a Canary-based game server for protocol **15.25**. It runs with SQLite and ships a starter world, a browser account manager, and the HTTP login endpoint used by the Windows client. Docker images are built for Linux AMD64 and ARM64.
 
-Canary is a free and open-source MMORPG server emulator for the OpenTibia community, written in C++20 and Lua. It is a fork of the [OTServBR-Global](https://github.com/opentibiabr/otservbr-global) project. The repository includes the server core, datapacks, Lua scripts, database schema, build presets, automated tests and development tooling used by the project.
+## Start on the Linux server
 
----
+Docker Engine and the Compose plugin are required. The default LAN address is `192.168.1.104`. Authenticate Git for the private repository, then sign in to GHCR with a GitHub classic personal access token that can read the package (`read:packages`).
 
-## Getting Started
-
-- [Wiki](https://github.com/opentibiabr/canary/wiki).
-
----
-
-## Docker Quickstart
-
-Canary includes a lightweight Docker quickstart for running a local test server
-without compiling Canary locally. The stack starts MariaDB, the published Canary
-runtime image, MyAAC as the website/admin AAC, and `opentibiabr/login-server` as
-the client login webservice.
-
-This quickstart is for local development, testing, and LAN demos. Do not expose
-it directly to the public Internet with the default test accounts and passwords.
-
-Run from the `docker` directory:
-
-```bash
-cp .env.dist .env
-docker compose up -d --build
+```sh
+git clone https://github.com/Lord1Egypt/ZATHROTH.git
+cd ZATHROTH
+docker login ghcr.io -u Lord1Egypt
+docker compose up -d
+docker compose ps
 ```
 
-The `docker` directory also provides guarded start scripts that start the stack
-and clean safe Docker leftovers without removing database volumes:
+The account manager and game share one named Docker volume, `zathroth_world`. SQLite is initialized on the first startup. Use `docker compose logs -f game accounts` to watch startup and `docker compose down` to stop the server while retaining the database.
 
-```powershell
-.\up.ps1
+## Create an account and log in from Windows
+
+1. Open `http://192.168.1.104:8088/` in a browser and sign in with username `1` and password `1`.
+2. Create your player account. The manager signs you in automatically so you can create or manage its characters. The shared login can register accounts only.
+3. Configure OTClient Redemption on Windows for protocol `1525` and supply the matching game assets. Sign in with the new account and select your character. The login service advertises `192.168.1.104:7172` as the game endpoint. [OTClient 15.25 setup](https://github.com/opentibiabr/otclient/wiki/Tutorial-to-use-OTC-in-Canary-main)
+
+For OTClient Redemption, add this entry to `Servers_init` in `init.lua` with the server list enabled.
+
+```lua
+["http://192.168.1.104:8088/login"] = {
+    port = 8088,
+    protocol = 1525,
+    httpLogin = true,
+    useAuthenticator = false,
+},
 ```
 
-```bash
-sh ./up.sh
+All three ports use TCP.
+
+| Port | Purpose |
+| --- | --- |
+| 8088 | Account manager and client HTTP login |
+| 7171 | Game server status and protocol login listener |
+| 7172 | Game connection |
+
+Run this configuration on a trusted LAN. HTTP login and account management use plain HTTP, and the registration login is shared.
+
+## Configure or update
+
+Optional overrides go in a local `.env` file. `ZATHROTH_SERVER_IP` is advertised to clients, and `ZATHROTH_BIND_IP` selects the Linux host interface to publish on. The bind address defaults to the advertised address.
+
+```dotenv
+ZATHROTH_SERVER_IP=192.168.1.104
+ZATHROTH_BIND_IP=192.168.1.104
+ZATHROTH_LOGIN_PORT=7171
+ZATHROTH_GAME_PORT=7172
+ZATHROTH_ACCOUNT_PORT=8088
 ```
 
-Default local endpoints:
+Run `git pull`, `docker compose pull`, and `docker compose up -d` to update. Docker picks the image architecture automatically. To build from source on the host, run `docker build -t zathroth:local .` followed by `ZATHROTH_IMAGE=zathroth:local docker compose up -d`.
 
-- Website/admin: `http://localhost:8080`
-- Client login webservice: `http://localhost:8088/login`
-- Game port: `7172`
+## Source and contact
 
-MyAAC's `login.php` is intentionally removed from the quickstart image. Clients
-should use `login-server` only. See [docs/docker/quickstart-for-beginners.md](docs/docker/quickstart-for-beginners.md)
-for a beginner guide and [docker/DOCKER.md](docker/DOCKER.md) for the full setup,
-environment variables, test account, and troubleshooting guide.
+ZATHROTH is derived from [Canary](https://github.com/opentibiabr/canary) at revision `666a60f6fef803b043cbaf1c7b5fab219da9bfa9`. The bundled starter map and upstream source are distributed under their existing terms. See [LICENSE](LICENSE) and the source copyright notices.
 
----
-
-## Documentation
-
-- [Recompile on Linux with executable backups](docs/building/recompile.md).
-  Covers seven-day retention, crash analysis, optional restart and WSL tests.
-- [Hardware sizing and capacity planning](docs/hardware-sizing.md). Measure
-  RAM and CPU, compare training and hunting workloads, and review capacity.
-- [Shared build cache for worktrees and forks](docs/development/shared-build-cache.md).
-- [Docker beginner quickstart](docs/docker/quickstart-for-beginners.md).
-- [Multiprotocol runtime profiles](docs/systems/multiprotocol.md). Covers the
-  current, 11.00, and 8.60 runtime contracts, port layout, client preparation,
-  and validation checklist.
-- [System documentation](docs/systems/README.md).
-- [Lua API reference and VSCode IntelliSense stubs](docs/lua-api/lua_api.md). Canary generates these files from the C++ Lua bindings during startup when `generateLuaApiDocs` is enabled. The repository `.luarc.json` already adds `docs/lua-api` to the Lua Language Server workspace library; for VSCode workspace settings, run `tools/setup_vscode_lua_api.ps1`.
-
----
-
-## Recommended Tools and Clients
-
-- [Assets Editor](https://github.com/Arch-Mina/Assets-Editor). Use this as the
-  single asset source of truth, then export legacy-compatible `.dat`/`.spr`
-  packages for 8.60 clients from the same current asset set.
-- [Remere's Map Editor](https://github.com/opentibiabr/remeres-map-editor/).
-- [OTClient Redemption](https://github.com/opentibiabr/otclient).
-- [Tibia Extended Client Library](https://github.com/dudantas/Tibia-Extended-Client-Library).
-  Use this to prepare compatible 8.60/11.00 CipSoft clients with extended
-  limits, config-driven login redirect, and per-client local state.
-- [Game Client](https://github.com/dudantas/tibia-client/releases/latest).
-
----
-
-## Nightly Packages
-
-Development builds can be downloaded from GitHub Actions artifacts. They are useful for testing recent changes from the `main` branch, but may include behavior that is not present in stable releases yet.
-
-- [Github Actions](https://github.com/opentibiabr/canary/actions/workflows/ci.yml?query=branch%3Amain).
-
----
-
-## Running Tests
-
-Tests can be run from the repository root using the tool versions and tasks
-pinned in `.mise.toml`:
-
-```bash
-mise install
-mise run configure linux-debug
-mise run build linux-debug
-mise run test linux-debug
-
-# Replace linux-debug with macos-debug or windows-debug as needed.
-```
-
-For detailed testing information including adding tests and framework usage, see [tests/README.md](tests/README.md).
-
----
-
-## Support & Community
-
-For real-time support, join the [OpenTibiaBR Discord](https://discord.gg/gvTj5sh9Mp).
-
-The GitHub issue tracker should be used for bugs, improvements and technical project tasks. It is not a support forum.
-
----
-
-## Contributing
-
-Contributions are welcome. You can help in several ways:
-
-- Report bugs through the [Issue Tracker](https://github.com/opentibiabr/canary/issues/new/choose).
-- Submit improvements through [Pull Requests](https://github.com/opentibiabr/canary/pulls).
-- Improve tests, documentation, scripts, datapacks, or C++ code.
-- Validate releases, nightly builds and recent changes.
-
-Before contributing, read the [Code of Conduct](https://github.com/opentibiabr/canary/blob/main/CODE_OF_CONDUCT.md) and the project [Contributing](https://github.com/opentibiabr/canary/blob/main/CONTRIBUTING.md) guide.
-
----
-
-## Sponsorship
-
-Canary is maintained by community contributors. To support development, visit the [OpenTibiaBR sponsors page](https://github.com/sponsors/opentibiabr).
-
----
-
-## Acknowledgements
-
-Thanks to all contributors of [Canary](https://github.com/opentibiabr/canary/graphs/contributors), [OTServBR-Global](https://github.com/opentibiabr/otservbr-global/graphs/contributors) and the OpenTibia community.
-
----
-
-## License
-
-This project is distributed under the [GPL-2.0 license](https://github.com/opentibiabr/canary/blob/main/LICENSE).
+Compiled by Mohamed Mounir. Contact akim.221992@gmail.com.

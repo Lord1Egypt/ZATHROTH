@@ -263,7 +263,7 @@ MarketOfferEx IOMarket::getOfferByCounter(uint32_t timestamp, uint16_t counter) 
 	const int32_t created = timestamp - g_configManager().getNumber(MARKET_OFFER_DURATION);
 
 	std::ostringstream query;
-	query << "SELECT `id`, `sale`, `itemtype`, `amount`, `created`, `price`, `player_id`, `anonymous`, `tier`, (SELECT `name` FROM `players` WHERE `id` = `player_id`) AS `player_name` FROM `market_offers` WHERE `created` = " << created << " AND ((`id` ^ 0xABCDEF) & 65535) = " << counter << " LIMIT 1";
+	query << "SELECT `id`, `sale`, `itemtype`, `amount`, `created`, `price`, `player_id`, `anonymous`, `tier`, (SELECT `name` FROM `players` WHERE `id` = `player_id`) AS `player_name` FROM `market_offers` WHERE `created` = " << created << " AND (((`id` | 0xABCDEF) - (`id` & 0xABCDEF)) & 65535) = " << counter << " LIMIT 1";
 
 	DBResult_ptr result = Database::getInstance().storeQuery(query.str());
 	if (!result) {

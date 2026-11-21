@@ -26,7 +26,7 @@ bool IOLoginData::gameWorldAuthentication(const std::string &accountDescriptor, 
 	account.setProtocolCompat(oldProtocol);
 
 	if (AccountErrors_t::Ok != account.load()) {
-		g_logger().error("Couldn't load account [{}].", account.getDescriptor());
+		g_logger().debug("Game login could not load an account.");
 		return false;
 	}
 
@@ -46,18 +46,18 @@ bool IOLoginData::gameWorldAuthentication(const std::string &accountDescriptor, 
 	}
 
 	if (AccountErrors_t::Ok != account.load()) {
-		g_logger().error("Failed to load account [{}]", accountDescriptor);
+		g_logger().error("Failed to reload game account [{}]", account.getID());
 		return false;
 	}
 
 	auto [players, result] = account.getAccountPlayers();
 	if (AccountErrors_t::Ok != result) {
-		g_logger().error("Failed to load account [{}] players", accountDescriptor);
+		g_logger().error("Failed to load game account [{}] characters", account.getID());
 		return false;
 	}
 
 	if (players[characterName] != 0) {
-		g_logger().error("Account [{}] player [{}] not found or deleted.", accountDescriptor, characterName);
+		g_logger().debug("Game account [{}] character [{}] is unavailable.", account.getID(), characterName);
 		return false;
 	}
 
@@ -75,6 +75,22 @@ uint8_t IOLoginData::getAccountType(uint32_t accountId) {
 	}
 
 	return result->getNumber<uint8_t>("type");
+}
+
+bool IOLoginData::reservePlayerLogin(uint32_t playerId, uint32_t accountId) {
+	// The account manager checks this same row before scheduling a character's deletion.
+	return g_database().storeQuery(fmt::format(
+		"INSERT INTO players_online (player_id) "
+		"SELECT id FROM players WHERE id = {} AND account_id = {} AND deletion = 0 "
+		"ON CONFLICT (player_id) DO NOTHING RETURNING player_id",
+		playerId, accountId
+	)) != nullptr;
+}
+
+void IOLoginData::clearPlayerLogin(uint32_t playerId) {
+	if (!g_database().executeQuery(fmt::format("DELETE FROM players_online WHERE player_id = {}", playerId))) {
+		g_logger().warn("Could not clear online presence for player {}", playerId);
+	}
 }
 
 // The boolean "disableIrrelevantInfo" will deactivate the loading of information that is not relevant to the preload, for example, forge, bosstiary, etc. None of this we need to access if the player is offline

@@ -34,13 +34,7 @@ cmake --build --preset windows-release-enabled-tests
 
 ### Integration test database
 
-Integration tests use the database configured by `tests/test.env` unless `TEST_ENV_FILE` points to another env file. The default database is `canary_test`, which is intended to be disposable.
-
-When `TEST_DB_ALLOW_RESET=1`, the integration test executable checks schema sentinel columns before connecting. If a sentinel differs from the expected `schema.sql` shape, it drops and recreates the test database, then imports `schema.sql` using the `mysql` client. This reset is only allowed for database names that look like test databases.
-
-Set `TEST_DB_SCHEMA` if the test executable cannot find `schema.sql` through the CMake-provided default path.
-
-Persistent databases are updated through numbered Lua migrations under `data-otservbr-global/migrations`; the test reset path is only for disposable integration databases.
+Integration tests initialize a fresh in-memory SQLite database from `schema.sql` in each test process. Set `TEST_DB_SCHEMA` to use a different SQLite schema file.
 
 #### Direct executable access
 

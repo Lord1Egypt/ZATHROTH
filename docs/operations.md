@@ -111,42 +111,9 @@ Requirements:
 
 ## Docker Quickstart
 
-Recommended for local development, local testing and LAN demos.
-
-Canary provides a Docker Compose quickstart including:
-
-* Canary from the published runtime image
-* MariaDB
-* MyAAC as website/admin AAC
-* `opentibiabr/login-server` as the client login webservice
-* Optional test accounts and characters
-
-Startup:
-
-```bash
-cd docker
-cp .env.dist .env
-docker compose up -d --build
-```
-
-The `--build` flag builds the MyAAC quickstart image. It does not compile
-Canary locally.
-
-Default exposed endpoints and ports:
-
-```text
-MyAAC website:            http://localhost:8080
-Client login API:         http://localhost:8088/login
-Canary login protocol:    7171
-Canary game protocol:     7172
-Canary status protocol:   7173
-Login-server gRPC:        9090
-```
-
-The quickstart is not a hardened production deployment with default settings.
-Before using it outside a trusted local network, change all default passwords,
-disable or remove test accounts, review published ports, and pin image tags.
-For the full contract, see `docker/DOCKER.md`.
+Run `docker compose up -d` from the repository root after following the
+[deployment guide](../README.md). The stack runs the game server and account
+manager and persists SQLite in the `world` volume.
 
 ---
 

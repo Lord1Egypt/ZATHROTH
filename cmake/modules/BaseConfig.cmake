@@ -44,7 +44,13 @@ find_package(
     REQUIRED
 )
 find_package(LuaJIT REQUIRED)
-find_package(MySQL REQUIRED)
+find_package(unofficial-sqlite3 CONFIG QUIET)
+if(TARGET unofficial::sqlite3::sqlite3)
+    set(ZATHROTH_SQLITE_TARGET unofficial::sqlite3::sqlite3)
+else()
+    find_package(SQLite3 3.35 REQUIRED)
+    set(ZATHROTH_SQLITE_TARGET SQLite::SQLite3)
+endif()
 find_package(Protobuf REQUIRED)
 find_package(Threads REQUIRED)
 find_package(ZLIB REQUIRED)
@@ -89,11 +95,6 @@ find_package(
 find_package(spdlog REQUIRED)
 find_package(
     unofficial-argon2
-    CONFIG
-    REQUIRED
-)
-find_package(
-    unofficial-libmariadb
     CONFIG
     REQUIRED
 )

@@ -16,9 +16,8 @@
 #include "game/scheduling/dispatcher.hpp"
 #include "server/network/message/outputmessage.hpp"
 
-std::string ProtocolStatus::SERVER_NAME = "Canary";
+std::string ProtocolStatus::SERVER_NAME = "ZATHROTH";
 std::string ProtocolStatus::SERVER_VERSION = "3.0";
-std::string ProtocolStatus::SERVER_DEVELOPERS = "OpenTibiaBR Organization";
 
 std::map<uint32_t, int64_t> ProtocolStatus::ipConnectMap;
 uint32_t ProtocolStatus::pruneCursor = 0;

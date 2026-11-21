@@ -28,7 +28,7 @@ function setGlobalStorage(key, value)
 	if not valueNumber then
 		value = "'" .. value .. "'"
 	end
-	db.query("INSERT INTO `global_storage` (`key`, `value`) VALUES (" .. key .. ", " .. value .. ") ON DUPLICATE KEY UPDATE `value` = " .. value)
+	db.query("INSERT INTO `global_storage` (`key`, `value`) VALUES (" .. key .. ", " .. value .. ") ON CONFLICT (`key`) DO UPDATE SET `value` = " .. value)
 end
 
 function Game.broadcastMessage(message, messageType)

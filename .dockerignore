@@ -35,3 +35,10 @@ apply.patch
 # Keep the runtime image lighter. The entrypoint downloads this map on first run
 # through CANARY_MAP_URL when data-otservbr-global is selected.
 data-otservbr-global/world/otservbr.otbm
+
+# Local databases, credentials, and Python bytecode
+*.sqlite3
+*.sqlite3-*
+.env
+.env.*
+**/__pycache__

@@ -12,29 +12,48 @@
 #include "config/configmanager.hpp"
 #include "lib/di/container.hpp"
 #include "lib/metrics/metrics.hpp"
-#include "utils/tools.hpp"
-
-#include <iterator>
+#include <sqlite3.h>
 
 #ifndef USE_PRECOMPILED_HEADERS
+	#include <algorithm>
+	#include <chrono>
+	#include <filesystem>
+	#include <fstream>
+	#include <fmt/chrono.h>
 	#include <fmt/format.h>
-	#include <string_view>
+	#include <zlib.h>
 #endif
 
 namespace {
 
-	void appendInsertBaseQuery(std::string &sql, std::string_view baseQuery, bool baseHasSpace) {
-		sql += baseQuery;
-		if (!baseHasSpace) {
-			sql.push_back(' ');
+	using Statement = std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)>;
+
+	bool compressBackup(const std::string &source, const std::string &destination) {
+		std::ifstream input(source, std::ios::binary);
+		if (!input) {
+			return false;
 		}
+		gzFile output = gzopen(destination.c_str(), "wb9");
+		if (!output) {
+			return false;
+		}
+		char buffer[8192];
+		bool written = true;
+		while (input.read(buffer, sizeof(buffer)) || input.gcount() > 0) {
+			auto size = static_cast<unsigned int>(input.gcount());
+			if (gzwrite(output, buffer, size) != size) {
+				written = false;
+				break;
+			}
+		}
+		return gzclose(output) == Z_OK && written && !input.bad();
 	}
 
 }
 
 Database::~Database() {
-	if (handle != nullptr) {
-		mysql_close(handle);
+	if (handle) {
+		sqlite3_close(handle);
 	}
 }
 
@@ -42,332 +61,251 @@ Database &Database::getInstance() {
 	return inject<Database>();
 }
 
-bool Database::connect() {
-	return connect(&g_configManager().getString(MYSQL_HOST), &g_configManager().getString(MYSQL_USER), &g_configManager().getString(MYSQL_PASS), &g_configManager().getString(MYSQL_DB), g_configManager().getNumber(SQL_PORT), &g_configManager().getString(MYSQL_SOCK));
+const char* Database::getClientVersion() {
+	return sqlite3_libversion();
 }
 
-bool Database::connect(const std::string* host, const std::string* user, const std::string* password, const std::string* database, uint32_t port, const std::string* sock) {
-	// connection handle initialization
-	handle = mysql_init(nullptr);
-	if (!handle) {
-		g_logger().error("Failed to initialize MySQL connection handle.");
+bool Database::connect() {
+	return connect(g_configManager().getString(SQLITE_DB));
+}
+
+bool Database::connect(const std::string &path) {
+	std::scoped_lock lock(databaseLock);
+	if (handle) {
+		return path == databasePath;
+	}
+	if (path.empty()) {
+		g_logger().error("SQLite database path is empty");
 		return false;
 	}
 
-	if (host->empty() || user->empty() || password->empty() || database->empty() || port <= 0) {
-		g_logger().warn("MySQL host, user, password, database or port not provided");
-	}
-
-	// automatic reconnect
-	bool reconnect = true;
-	mysql_options(handle, MYSQL_OPT_RECONNECT, &reconnect);
-
-	// Remove ssl verification
-	bool ssl_enabled = false;
-	mysql_options(handle, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &ssl_enabled);
-
-	// connects to database
-	if (!mysql_real_connect(handle, host->c_str(), user->c_str(), password->c_str(), database->c_str(), port, sock->c_str(), 0)) {
-		g_logger().error("MySQL Error Message: {}", mysql_error(handle));
+	sqlite3* opened = nullptr;
+	const int status = sqlite3_open_v2(path.c_str(), &opened, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
+	std::unique_ptr<sqlite3, decltype(&sqlite3_close)> connection(opened, sqlite3_close);
+	if (status != SQLITE_OK) {
+		g_logger().error("Could not open SQLite database '{}': {}", path, sqlite3_errstr(status));
 		return false;
 	}
 
-	DBResult_ptr result = storeQuery("SHOW VARIABLES LIKE 'max_allowed_packet'");
-	if (result) {
-		maxPacketSize = result->getNumber<uint64_t>("Value");
+	sqlite3_busy_timeout(opened, 5000);
+	sqlite3_db_config(opened, SQLITE_DBCONFIG_DQS_DML, 0, nullptr);
+	sqlite3_db_config(opened, SQLITE_DBCONFIG_DQS_DDL, 0, nullptr);
+	if (sqlite3_exec(opened, "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL", nullptr, nullptr, nullptr) != SQLITE_OK) {
+		g_logger().error("Could not configure SQLite database '{}': {}", path, sqlite3_errmsg(opened));
+		return false;
 	}
+	databasePath = path;
+	handle = connection.release();
+	lastInsertId = 0;
 	return true;
 }
 
-void Database::createDatabaseBackup(bool compress) const {
-	if (!g_configManager().getBoolean(MYSQL_DB_BACKUP)) {
+void Database::createDatabaseBackup(bool compress) {
+	if (!g_configManager().getBoolean(SQLITE_DB_BACKUP)) {
 		return;
 	}
 
-	// Get current time for formatting
-	auto now = std::chrono::system_clock::now();
-	std::string formattedDate = fmt::format("{:%Y-%m-%d}", now);
-	std::string formattedTime = fmt::format("{:%H-%M-%S}", now);
+	try {
+		const auto now = std::chrono::system_clock::now();
+		const auto backupDirectory = std::filesystem::path(g_configManager().getString(SQLITE_DB)).parent_path() / "database_backup" / fmt::format("{:%Y-%m-%d}", now);
+		std::filesystem::create_directories(backupDirectory);
+		const auto suffix = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+		const auto filename = (backupDirectory / fmt::format("backup_{}.sqlite3", suffix)).string();
 
-	// Create a backup directory based on the current date
-	std::string backupDir = fmt::format("database_backup/{}/", formattedDate);
-	std::filesystem::create_directories(backupDir);
-	std::string backupFileName = fmt::format("{}backup_{}.sql", backupDir, formattedTime);
+		if (!executeQuery("VACUUM INTO " + escapeString(filename))) {
+			g_logger().error("Failed to create SQLite database backup");
+			return;
+		}
 
-	// Create a temporary configuration file for MySQL credentials
-	std::string tempConfigFile = "database_backup.cnf";
-	std::ofstream configFile(tempConfigFile);
-	if (configFile.is_open()) {
-		configFile << "[client]\n";
-		configFile << "user=\"" << g_configManager().getString(MYSQL_USER) << "\"\n";
-		configFile << "password=\"" << g_configManager().getString(MYSQL_PASS) << "\"\n";
-		configFile << "host=" << g_configManager().getString(MYSQL_HOST) << "\n";
-		configFile << "port=" << g_configManager().getNumber(SQL_PORT) << "\n";
-		configFile.close();
-	} else {
-		g_logger().error("Failed to create temporary MySQL configuration file.");
-		return;
-	}
-
-	// Execute mysqldump command to create backup file
-	std::string command = fmt::format(
-		"mysqldump --defaults-extra-file={} {} > {}",
-		tempConfigFile, g_configManager().getString(MYSQL_DB), backupFileName
-	);
-
-	int result = std::system(command.c_str());
-	std::filesystem::remove(tempConfigFile);
-
-	if (result != 0) {
-		g_logger().error("Failed to create database backup using mysqldump.");
-		return;
-	}
-
-	// Compress the backup file if requested
-	std::string compressedFileName;
-	compressedFileName = backupFileName + ".gz";
-	gzFile gzFile = gzopen(compressedFileName.c_str(), "wb9");
-	if (!gzFile) {
-		g_logger().error("Failed to open gzip file for compression.");
-		return;
-	}
-
-	std::ifstream backupFile(backupFileName, std::ios::binary);
-	if (!backupFile.is_open()) {
-		g_logger().error("Failed to open backup file for compression: {}", backupFileName);
-		gzclose(gzFile);
-		return;
-	}
-
-	std::string buffer(8192, '\0');
-	while (backupFile.read(&buffer[0], buffer.size()) || backupFile.gcount() > 0) {
-		gzwrite(gzFile, buffer.data(), backupFile.gcount());
-	}
-
-	backupFile.close();
-	gzclose(gzFile);
-	std::filesystem::remove(backupFileName);
-
-	g_logger().info("Database backup successfully compressed to: {}", compressedFileName);
-
-	// Delete backups older than 7 days
-	auto nowTime = std::chrono::system_clock::now();
-	auto sevenDaysAgo = nowTime - std::chrono::hours(7 * 24); // 7 days in hours
-	for (const auto &entry : std::filesystem::directory_iterator("database_backup")) {
-		if (entry.is_directory()) {
-			try {
-				for (const auto &file : std::filesystem::directory_iterator(entry)) {
-					if (file.path().extension() == ".gz") {
-						auto fileTime = std::filesystem::last_write_time(file);
-						auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(fileTime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
-						auto fileTimeSystemClock = std::chrono::system_clock::time_point { sctp.time_since_epoch() };
-
-						if (fileTimeSystemClock < sevenDaysAgo) {
-							std::filesystem::remove(file);
-							g_logger().info("Deleted old backup file: {}", file.path().string());
-						}
-					}
-				}
-			} catch (const std::filesystem::filesystem_error &e) {
-				g_logger().error("Failed to check or delete files in backup directory: {}. Error: {}", entry.path().string(), e.what());
+		auto savedFile = filename;
+		if (compress) {
+			const auto compressedFile = filename + ".gz";
+			if (compressBackup(filename, compressedFile)) {
+				std::filesystem::remove(filename);
+				savedFile = compressedFile;
+			} else {
+				std::filesystem::remove(compressedFile);
+				g_logger().warn("Could not compress database backup '{}'", filename);
 			}
 		}
-	}
-}
+		g_logger().info("Database backup saved to {}", savedFile);
 
-bool Database::beginTransaction() {
-	if (!executeQuery("BEGIN")) {
-		return false;
-	}
-	metrics::lock_latency measureLock("database");
-	databaseLock.lock();
-	measureLock.stop();
-
-	return true;
-}
-
-bool Database::rollback() {
-	if (!handle) {
-		g_logger().error("Database not initialized!");
-		return false;
-	}
-
-	if (mysql_rollback(handle) != 0) {
-		g_logger().error("Message: {}", mysql_error(handle));
-		databaseLock.unlock();
-		return false;
-	}
-
-	databaseLock.unlock();
-	return true;
-}
-
-bool Database::commit() {
-	if (!handle) {
-		g_logger().error("Database not initialized!");
-		return false;
-	}
-	if (mysql_commit(handle) != 0) {
-		g_logger().error("Message: {}", mysql_error(handle));
-		databaseLock.unlock();
-		return false;
-	}
-
-	databaseLock.unlock();
-	return true;
-}
-
-bool Database::isRecoverableError(unsigned int error) {
-	return error == CR_SERVER_LOST || error == CR_SERVER_GONE_ERROR || error == CR_CONN_HOST_ERROR || error == 1053 /*ER_SERVER_SHUTDOWN*/ || error == CR_CONNECTION_ERROR;
-}
-
-bool Database::retryQuery(std::string_view query, int retries) {
-	while (retries > 0 && mysql_query(handle, query.data()) != 0) {
-		g_logger().error("Query: {}", query.substr(0, 256));
-		g_logger().error("MySQL error [{}]: {}", mysql_errno(handle), mysql_error(handle));
-		if (!isRecoverableError(mysql_errno(handle))) {
-			return false;
+		const auto cutoff = std::filesystem::file_time_type::clock::now() - std::chrono::hours(7 * 24);
+		for (const auto &entry : std::filesystem::recursive_directory_iterator(backupDirectory.parent_path())) {
+			const auto path = entry.path().filename().string();
+			if (entry.is_regular_file() && path.starts_with("backup_") && (path.ends_with(".sqlite3") || path.ends_with(".sqlite3.gz")) && entry.last_write_time() < cutoff) {
+				std::filesystem::remove(entry.path());
+			}
 		}
-		std::this_thread::sleep_for(std::chrono::seconds(1));
-		retries--;
+	} catch (const std::filesystem::filesystem_error &error) {
+		g_logger().error("Could not manage SQLite backups: {}", error.what());
 	}
-	if (retries == 0) {
-		g_logger().error("Query {} failed after {} retries.", query, 10);
-		return false;
+}
+
+sqlite3_stmt* Database::prepareQuery(std::string_view query) {
+	if (!handle) {
+		g_logger().error("Database not initialized");
+		return nullptr;
+	}
+	if (query.empty() || query.size() > MAX_QUERY_SIZE || query.find('\0') != std::string_view::npos) {
+		g_logger().error("Invalid SQLite query length or contents");
+		return nullptr;
 	}
 
+	sqlite3_stmt* raw = nullptr;
+	const char* tail = nullptr;
+	const int status = sqlite3_prepare_v2(handle, query.data(), static_cast<int>(query.size()), &raw, &tail);
+	Statement statement(raw, sqlite3_finalize);
+	if (status != SQLITE_OK) {
+		g_logger().error("Could not prepare SQLite query: {}", sqlite3_errmsg(handle));
+		return nullptr;
+	}
+	if (!statement) {
+		return nullptr;
+	}
+
+	const std::string_view remainder(tail, query.data() + query.size() - tail);
+	if (remainder.find_first_not_of(" \t\r\n") != std::string_view::npos) {
+		g_logger().error("Multiple SQLite statements are not supported");
+		return nullptr;
+	}
+	return statement.release();
+}
+
+bool Database::executeScript(const std::string &script) {
+	std::scoped_lock lock(databaseLock);
+	if (!handle || sqlite3_exec(handle, script.c_str(), nullptr, nullptr, nullptr) != SQLITE_OK) {
+		g_logger().error("Could not initialize SQLite schema: {}", handle ? sqlite3_errmsg(handle) : "database not initialized");
+		return false;
+	}
 	return true;
 }
 
 bool Database::executeQuery(std::string_view query) {
-	if (!handle) {
-		g_logger().error("Database not initialized!");
-		return false;
-	}
-
-	g_logger().trace("Executing Query: {}", query);
-
 	metrics::lock_latency measureLock("database");
-	std::scoped_lock lock { databaseLock };
+	std::scoped_lock lock(databaseLock);
 	measureLock.stop();
 
 	metrics::query_latency measure(query.substr(0, 50));
-	bool success = retryQuery(query, 10);
-	mysql_free_result(mysql_store_result(handle));
+	Statement statement(prepareQuery(query), sqlite3_finalize);
+	if (!statement) {
+		return false;
+	}
+	const auto firstToken = query.find_first_not_of(" \t\r\n");
+	const auto keyword = query.substr(firstToken, 6);
+	const bool isInsert = keyword.size() == 6 && (sqlite3_strnicmp(keyword.data(), "INSERT", 6) == 0);
+	if (isInsert) {
+		sqlite3_set_last_insert_rowid(handle, 0);
+		lastInsertId = 0;
+	}
 
-	return success;
+	int status;
+	do {
+		status = sqlite3_step(statement.get());
+	} while (status == SQLITE_ROW);
+	if (status != SQLITE_DONE) {
+		g_logger().error("SQLite query failed: {}", sqlite3_errmsg(handle));
+		return false;
+	}
+	if (isInsert) {
+		lastInsertId = static_cast<uint64_t>(sqlite3_last_insert_rowid(handle));
+	}
+	return true;
 }
 
 DBResult_ptr Database::storeQuery(std::string_view query) {
-	if (!handle) {
-		g_logger().error("Database not initialized!");
-		return nullptr;
-	}
-	g_logger().trace("Storing Query: {}", query);
-
 	metrics::lock_latency measureLock("database");
-	std::scoped_lock lock { databaseLock };
+	std::scoped_lock lock(databaseLock);
 	measureLock.stop();
 
 	metrics::query_latency measure(query.substr(0, 50));
-retry:
-	if (mysql_query(handle, query.data()) != 0) {
-		g_logger().error("Query: {}", query);
-		g_logger().error("Message: {}", mysql_error(handle));
-		if (!isRecoverableError(mysql_errno(handle))) {
-			return nullptr;
-		}
-		std::this_thread::sleep_for(std::chrono::seconds(1));
-		goto retry;
+	Statement statement(prepareQuery(query), sqlite3_finalize);
+	if (!statement) {
+		return nullptr;
 	}
 
-	// Retrieving results of query
-	MYSQL_RES* res = mysql_store_result(handle);
-	if (res != nullptr) {
-		DBResult_ptr result = std::make_shared<DBResult>(res);
-		if (!result->hasNext()) {
-			return nullptr;
-		}
-		return result;
+	auto result = DBResult_ptr(new DBResult());
+	const int columns = sqlite3_column_count(statement.get());
+	for (int column = 0; column < columns; ++column) {
+		result->listNames[sqlite3_column_name(statement.get(), column)] = column;
 	}
-	return nullptr;
+
+	int status;
+	while ((status = sqlite3_step(statement.get())) == SQLITE_ROW) {
+		auto &row = result->rows.emplace_back();
+		row.reserve(columns);
+		for (int column = 0; column < columns; ++column) {
+			if (sqlite3_column_type(statement.get(), column) == SQLITE_NULL) {
+				row.emplace_back(std::nullopt);
+				continue;
+			}
+
+			const auto* bytes = static_cast<const char*>(sqlite3_column_blob(statement.get(), column));
+			const auto size = sqlite3_column_bytes(statement.get(), column);
+			row.emplace_back(std::in_place, bytes ? bytes : "", size);
+		}
+	}
+
+	if (status != SQLITE_DONE) {
+		g_logger().error("SQLite query failed: {}", sqlite3_errmsg(handle));
+		return nullptr;
+	}
+	return result->hasNext() ? result : nullptr;
 }
 
 std::string Database::escapeString(const std::string &s) const {
-	std::string::size_type len = s.length();
-	auto length = static_cast<uint32_t>(len);
-	std::string escaped = escapeBlob(s.c_str(), length);
-	if (escaped.empty()) {
-		g_logger().warn("Error escaping string");
+	if (s.find('\0') != std::string::npos) {
+		return "CAST(" + escapeBlob(s.data(), static_cast<uint32_t>(s.size())) + " AS TEXT)";
 	}
-	return escaped;
-}
-
-std::string Database::escapeBlob(const char* s, uint32_t length) const {
-	metrics::lock_latency measureLock("database");
-	std::scoped_lock lock { databaseLock };
-	measureLock.stop();
-
-	size_t maxLength = (length * 2) + 1;
-
 	std::string escaped;
-	escaped.reserve(maxLength + 2);
+	escaped.reserve(s.size() + 2);
 	escaped.push_back('\'');
-
-	if (length != 0) {
-		std::string output(maxLength, '\0');
-		size_t escapedLength = mysql_real_escape_string(handle, &output[0], s, length);
-		output.resize(escapedLength);
-		escaped.append(output);
+	for (char c : s) {
+		escaped.push_back(c);
+		if (c == '\'') {
+			escaped.push_back(c);
+		}
 	}
-
 	escaped.push_back('\'');
 	return escaped;
 }
 
-DBResult::DBResult(MYSQL_RES* res) {
-	handle = res;
-
-	int num_fields = mysql_num_fields(handle);
-
-	const MYSQL_FIELD* fields = mysql_fetch_fields(handle);
-	for (size_t i = 0; i < num_fields; i++) {
-		listNames[fields[i].name] = i;
+std::string Database::escapeBlob(const char* data, uint32_t length) const {
+	constexpr std::string_view hex = "0123456789abcdef";
+	std::string escaped = "X'";
+	escaped.reserve(static_cast<size_t>(length) * 2 + 3);
+	for (uint32_t i = 0; i < length; ++i) {
+		auto value = static_cast<unsigned char>(data[i]);
+		escaped.push_back(hex[value >> 4]);
+		escaped.push_back(hex[value & 15]);
 	}
-	row = mysql_fetch_row(handle);
-}
-
-DBResult::~DBResult() {
-	mysql_free_result(handle);
+	escaped.push_back('\'');
+	return escaped;
 }
 
 std::string DBResult::getString(const std::string &s) const {
-	auto it = listNames.find(s);
-	if (it == listNames.end()) {
-		g_logger().error("Column '{}' does not exist in result set", s);
-		return {};
-	}
-	if (row[it->second] == nullptr) {
-		return {};
-	}
-	return std::string(row[it->second]);
+	unsigned long size;
+	const char* data = getStream(s, size);
+	return data ? std::string(data, size) : std::string();
 }
 
 const char* DBResult::getStream(const std::string &s, unsigned long &size) const {
+	size = 0;
 	auto it = listNames.find(s);
 	if (it == listNames.end()) {
-		g_logger().error("Column '{}' doesn't exist in the result set", s);
-		size = 0;
+		g_logger().error("Column '{}' does not exist in the result set", s);
+		return nullptr;
+	}
+	if (!hasNext()) {
+		return nullptr;
+	}
+	const auto &value = rows[row][it->second];
+	if (!value) {
 		return nullptr;
 	}
 
-	if (row[it->second] == nullptr) {
-		size = 0;
-		return nullptr;
-	}
-
-	size = mysql_fetch_lengths(handle)[it->second];
-	return row[it->second];
+	size = value->size();
+	return value->c_str();
 }
 
 uint8_t DBResult::getU8FromString(const std::string &string, const std::string &function) {
@@ -391,133 +329,94 @@ int8_t DBResult::getInt8FromString(const std::string &string, const std::string 
 }
 
 size_t DBResult::countResults() const {
-	return static_cast<size_t>(mysql_num_rows(handle));
+	return rows.size();
 }
 
 bool DBResult::hasNext() const {
-	return row != nullptr;
+	return row < rows.size();
 }
 
 bool DBResult::next() {
-	if (!handle) {
-		g_logger().error("Database not initialized!");
-		return false;
+	if (hasNext()) {
+		++row;
 	}
-	row = mysql_fetch_row(handle);
-	return row != nullptr;
+	return hasNext();
 }
 
 DBInsert::DBInsert(std::string insertQuery) :
 	query(std::move(insertQuery)) {
-	this->length = this->query.length();
+	if (!query.empty() && query.back() != ' ') {
+		query.push_back(' ');
+	}
 }
 
 bool DBInsert::addRow(std::string_view row) {
-	const size_t rowLength = row.length();
-	auto max_packet_size = Database::getInstance().getMaxPacketSize();
-	size_t addedLength = values.empty() ? rowLength + 2 : rowLength + 3;
-
-	if (length + addedLength > max_packet_size) {
-		if (values.empty() || !execute()) {
-			return false;
-		}
-
-		addedLength = rowLength + 2;
-		if (length + addedLength > max_packet_size) {
-			return false;
-		}
+	const size_t addedLength = row.size() + 2;
+	const size_t statementLength = query.size() + upsertClause.size() + addedLength;
+	if (statementLength > Database::MAX_QUERY_SIZE) {
+		return false;
+	}
+	if (!values.empty() && statementLength + values.size() + 1 > Database::MAX_QUERY_SIZE && !execute()) {
+		return false;
 	}
 
-	length += addedLength;
-	if (values.empty()) {
-		values.reserve(rowLength + 2);
-		values.push_back('(');
-		values.append(row);
-		values.push_back(')');
-	} else {
-		values.reserve(values.length() + rowLength + 3);
+	if (!values.empty()) {
 		values.push_back(',');
-		values.push_back('(');
-		values.append(row);
-		values.push_back(')');
 	}
+	values.push_back('(');
+	values.append(row);
+	values.push_back(')');
 	return true;
 }
 
 bool DBInsert::addRow(std::ostringstream &row) {
-	bool ret = addRow(row.str());
+	const bool added = addRow(row.str());
 	row.str(std::string());
-	return ret;
+	return added;
 }
 
 void DBInsert::upsert(const std::vector<std::string> &columns) {
-	upsertColumns = columns;
+	upsertClause.clear();
+	if (columns.empty()) {
+		return;
+	}
+	upsertClause = " ON CONFLICT DO UPDATE SET ";
+	for (size_t i = 0; i < columns.size(); ++i) {
+		if (i > 0) {
+			upsertClause += ", ";
+		}
+		upsertClause += fmt::format("`{0}` = excluded.`{0}`", columns[i]);
+	}
 }
 
 bool DBInsert::execute() {
 	if (values.empty()) {
 		return true;
 	}
-
-	const std::string &baseQuery = this->query;
-	std::string upsertQuery;
-
-	if (!upsertColumns.empty()) {
-		size_t estimatedSize = 32;
-		for (const auto &column : upsertColumns) {
-			estimatedSize += (column.size() * 2) + 16;
-		}
-
-		upsertQuery.reserve(estimatedSize);
-		upsertQuery += " ON DUPLICATE KEY UPDATE ";
-		auto upsertOutput = std::back_inserter(upsertQuery);
-		for (size_t i = 0; i < upsertColumns.size(); ++i) {
-			upsertOutput = fmt::format_to(upsertOutput, "`{0}` = VALUES(`{0}`)", upsertColumns[i]);
-			if (i + 1 < upsertColumns.size()) {
-				upsertQuery.push_back(',');
-				upsertQuery.push_back(' ');
-			}
-		}
-	}
-
-	std::string currentBatch = values;
-	const bool baseHasSpace = !baseQuery.empty() && baseQuery.back() == ' ';
-	const size_t separatorSize = baseHasSpace ? 0U : 1U;
-	const size_t queryPrefixSize = baseQuery.size() + separatorSize + upsertQuery.size();
-	if (queryPrefixSize >= Database::MAX_QUERY_SIZE) {
+	if (!g_database().executeQuery(query + values + upsertClause)) {
 		return false;
 	}
-
-	while (!currentBatch.empty()) {
-		size_t cutPos = Database::MAX_QUERY_SIZE - queryPrefixSize;
-		if (cutPos < currentBatch.size()) {
-			cutPos = currentBatch.rfind("),(", cutPos);
-			if (cutPos == std::string::npos) {
-				return false;
-			}
-			cutPos += 2;
-		} else {
-			cutPos = currentBatch.size();
-		}
-
-		std::string batchValues = currentBatch.substr(0, cutPos);
-		if (!batchValues.empty() && batchValues.back() == ',') {
-			batchValues.pop_back();
-		}
-		currentBatch = currentBatch.substr(cutPos);
-
-		std::string sql;
-		sql.reserve(queryPrefixSize + batchValues.size());
-		appendInsertBaseQuery(sql, baseQuery, baseHasSpace);
-		sql += batchValues;
-		sql += upsertQuery;
-
-		if (!g_database().executeQuery(sql)) {
-			return false;
-		}
-	}
-
 	values.clear();
-	length = this->query.length();
+	return true;
+}
+
+DBTransaction::DBTransaction(Database &database) :
+	database(database), lock(database.databaseLock) {
+	nested = database.handle && !sqlite3_get_autocommit(database.handle);
+	active = database.executeQuery(nested ? "SAVEPOINT server_transaction" : "BEGIN IMMEDIATE");
+}
+
+DBTransaction::~DBTransaction() {
+	if (active && !sqlite3_get_autocommit(database.handle)) {
+		const auto* rollback = nested ? "ROLLBACK TO server_transaction; RELEASE server_transaction" : "ROLLBACK";
+		sqlite3_exec(database.handle, rollback, nullptr, nullptr, nullptr);
+	}
+}
+
+bool DBTransaction::commit() {
+	if (!database.executeQuery(nested ? "RELEASE server_transaction" : "COMMIT")) {
+		return false;
+	}
+	active = false;
 	return true;
 }

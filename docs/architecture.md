@@ -506,35 +506,12 @@ Tests are integrated with CMake and CI pipelines.
 
 # Docker Architecture
 
-Located under:
+The root Compose stack runs the game server and account manager as two services
+from the same image. Both services share the SQLite database in a named Docker
+volume. The image includes the data-canary world and the HTTP endpoint used by
+the modern client's account login.
 
-```text
-docker/
-```
-
-Local Docker quickstart stack:
-
-```text
-┌──────────────────────────────┐
-│ MariaDB                      │
-└───────────────┬──────────────┘
-                │
-┌───────────────▼──────────────┐
-│ Canary runtime image         │
-│ data-otservbr-global default │
-└───────────────┬──────────────┘
-                │
-       ┌────────┴─────────┐
-       ▼                  ▼
-┌────────────┐    ┌────────────────┐
-│ MyAAC      │    │ login-server   │
-│ website    │    │ client login   │
-└────────────┘    └────────────────┘
-```
-
-This enables local development, local testing and LAN demos without compiling
-Canary locally. It is not the production deployment model with default settings;
-see `docker/DOCKER.md` for the quickstart contract.
+See the [deployment guide](../README.md) for network configuration and setup.
 
 ---
 

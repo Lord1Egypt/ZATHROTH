@@ -80,50 +80,16 @@ canary/
 
 # Development Setup
 
-## Option 1: Docker (Recommended for Beginners)
+## Option 1: Docker
 
-The fastest way to start local testing is using the Docker quickstart.
-
-Services provided:
-
-* Canary
-* MariaDB
-* MyAAC
-* Login Server
-
-Start the stack:
+Build a local image and start the stack on loopback.
 
 ```bash
-cd docker
-cp .env.dist .env
-docker compose up -d --build
+docker build -t zathroth:local .
+ZATHROTH_IMAGE=zathroth:local ZATHROTH_SERVER_IP=127.0.0.1 docker compose up -d
 ```
 
-This pulls the published Canary runtime image and builds the MyAAC quickstart
-image. It does not compile Canary locally.
-
-Default endpoints:
-
-```text
-Website:                 http://localhost:8080
-Client login API:        http://localhost:8088/login
-Canary login protocol:   7171
-Canary game protocol:    7172
-Canary status protocol:  7173
-Login-server gRPC:       9090
-```
-
-Docker is ideal when:
-
-* Testing scripts
-* Developing datapacks
-* Learning the project structure
-* Avoiding local dependency installation
-* Running local or LAN demos with trusted defaults
-
-Do not expose the quickstart directly to the public Internet with default
-accounts, passwords or rolling image tags. See `docker/DOCKER.md` for the full
-Docker quickstart contract.
+See the [deployment guide](../README.md) for client connection details.
 
 ---
 

@@ -45,7 +45,7 @@ The global Git, commit, PR, C++ header, exception, and documentation policies ap
 - Before changing `std::shared_ptr` Lua userdata, read `docs/systems/lua-shared-userdata.md` and use its typed trait, registration, and push helpers.
 - Never combine shared `pushUserdata` with a manual metatable, use a weak metatable for shared userdata, or wrap a borrowed object without a no-op deleter. Run the document's two `rg` checks and investigate every match.
 
-## Docker Quickstart Policy
+## Docker Deployment
 
-- For quickstart changes, read `docs/docker/quickstart-for-beginners.md` and `docker/DOCKER.md`; keep CI/build, development, and user quickstart responsibilities separate.
-- The default client path is `login-server` at `http://localhost:8088/login`, never MyAAC `login.php`. MyAAC remains website/admin-only, uses `slawkens/myaac` `2.x`, and keeps `http://localhost:8080`; public config stays `CANARY_*`, and the quickstart uses the published Canary runtime image.
+- Use the root `compose.yaml` and Dockerfile for the ZATHROTH deployment. The game and account service share the SQLite volume.
+- Use the account service at `http://<host>:8088/login` for modern client login. Verify both image architectures with the container workflow.

@@ -686,16 +686,16 @@ bool IOLoginDataSave::savePlayerPreyClass(const std::shared_ptr<Player> &player)
 		const std::string query = fmt::format(
 			"INSERT INTO player_prey (`player_id`, `slot`, `state`, `raceid`, `option`, `bonus_type`, `bonus_rarity`, `bonus_percentage`, `bonus_time`, `free_reroll`, `monster_list`) "
 			"VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}) "
-			"ON DUPLICATE KEY UPDATE "
-			"`state` = VALUES(`state`), "
-			"`raceid` = VALUES(`raceid`), "
-			"`option` = VALUES(`option`), "
-			"`bonus_type` = VALUES(`bonus_type`), "
-			"`bonus_rarity` = VALUES(`bonus_rarity`), "
-			"`bonus_percentage` = VALUES(`bonus_percentage`), "
-			"`bonus_time` = VALUES(`bonus_time`), "
-			"`free_reroll` = VALUES(`free_reroll`), "
-			"`monster_list` = VALUES(`monster_list`)",
+			"ON CONFLICT (`player_id`, `slot`) DO UPDATE SET "
+			"`state` = excluded.`state`, "
+			"`raceid` = excluded.`raceid`, "
+			"`option` = excluded.`option`, "
+			"`bonus_type` = excluded.`bonus_type`, "
+			"`bonus_rarity` = excluded.`bonus_rarity`, "
+			"`bonus_percentage` = excluded.`bonus_percentage`, "
+			"`bonus_time` = excluded.`bonus_time`, "
+			"`free_reroll` = excluded.`free_reroll`, "
+			"`monster_list` = excluded.`monster_list`",
 			playerGuid,
 			static_cast<uint16_t>(slot->id),
 			static_cast<uint16_t>(slot->state),
@@ -745,15 +745,15 @@ bool IOLoginDataSave::savePlayerTaskHuntingClass(const std::shared_ptr<Player> &
 		const std::string query = fmt::format(
 			"INSERT INTO `player_taskhunt` (`player_id`, `slot`, `state`, `raceid`, `upgrade`, `rarity`, `kills`, `disabled_time`, `free_reroll`, `monster_list`) "
 			"VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}) "
-			"ON DUPLICATE KEY UPDATE "
-			"`state` = VALUES(`state`), "
-			"`raceid` = VALUES(`raceid`), "
-			"`upgrade` = VALUES(`upgrade`), "
-			"`rarity` = VALUES(`rarity`), "
-			"`kills` = VALUES(`kills`), "
-			"`disabled_time` = VALUES(`disabled_time`), "
-			"`free_reroll` = VALUES(`free_reroll`), "
-			"`monster_list` = VALUES(`monster_list`)",
+			"ON CONFLICT (`player_id`, `slot`) DO UPDATE SET "
+			"`state` = excluded.`state`, "
+			"`raceid` = excluded.`raceid`, "
+			"`upgrade` = excluded.`upgrade`, "
+			"`rarity` = excluded.`rarity`, "
+			"`kills` = excluded.`kills`, "
+			"`disabled_time` = excluded.`disabled_time`, "
+			"`free_reroll` = excluded.`free_reroll`, "
+			"`monster_list` = excluded.`monster_list`",
 			playerGuid,
 			static_cast<uint16_t>(slot->id),
 			static_cast<uint16_t>(slot->state),

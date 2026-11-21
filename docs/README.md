@@ -226,10 +226,8 @@ Recommended for:
 * Testing
 * LAN demos
 
-The repository Docker Compose stack is a quickstart. It uses the published
-Canary runtime image, builds the MyAAC quickstart image, and should not be used
-as a production deployment with default settings. See
-[docker/DOCKER.md](../docker/DOCKER.md) for the complete quickstart contract.
+The root Compose stack uses the published ZATHROTH image and a shared SQLite
+volume. See the [deployment guide](../README.md) for setup.
 
 ## Native Installation
 

@@ -16,7 +16,7 @@ public:
 	static bool tableExists(const std::string &table);
 
 	static int32_t getDatabaseVersion();
-	static bool isDatabaseSetup();
+	static bool initializeDatabase(const std::string &schemaPath = "schema.sql");
 
 	static bool optimizeTables();
 	static void updateDatabase();

@@ -11,81 +11,65 @@
 
 #include "declarations.hpp"
 
+#include "lib/logging/logger.hpp"
+
 #ifndef USE_PRECOMPILED_HEADERS
-	#include <mysql/mysql.h>
+	#include <map>
+	#include <memory>
 	#include <mutex>
+	#include <optional>
+	#include <sstream>
+	#include <string>
+	#include <string_view>
+	#include <type_traits>
 	#include <utility>
+	#include <vector>
 #endif
+
+struct sqlite3;
+struct sqlite3_stmt;
 
 class DBResult;
 using DBResult_ptr = std::shared_ptr<DBResult>;
 
 class Database {
 public:
-	static const size_t MAX_QUERY_SIZE = 8 * 1024 * 1024; // 8 Mb -- half the default MySQL max_allowed_packet size
+	static constexpr size_t MAX_QUERY_SIZE = 8 * 1024 * 1024;
 
 	Database() = default;
 	~Database();
 
-	// Singleton - ensures we don't accidentally copy it.
 	Database(const Database &) = delete;
 	Database &operator=(const Database &) = delete;
 
 	static Database &getInstance();
 
 	bool connect();
+	bool connect(const std::string &path);
+	void createDatabaseBackup(bool compress);
 
-	bool connect(const std::string* host, const std::string* user, const std::string* password, const std::string* database, uint32_t port, const std::string* sock);
-
-	/**
-	 * @brief Creates a backup of the database.
-	 *
-	 * This function generates a backup of the database, with options for compression.
-	 * The backup can be triggered periodically or during specific events like server loading.
-	 *
-	 * The backup operation will only execute if the configuration option `MYSQL_DB_BACKUP`
-	 * is set to true in the `config.lua` file. If this configuration is disabled, the function
-	 * will return without performing any action.
-	 *
-	 * @param compress Indicates whether the backup should be compressed.
-	 * - If `compress` is true, the backup is created during an interval-based save, which occurs every 2 hours.
-	 *   This helps prevent excessive growth in the number of backup files.
-	 * - If `compress` is false, the backup is created during the global save, which is triggered once a day when the server loads.
-	 */
-	void createDatabaseBackup(bool compress) const;
-
-	bool retryQuery(std::string_view query, int retries);
 	bool executeQuery(std::string_view query);
-
 	DBResult_ptr storeQuery(std::string_view query);
 
 	std::string escapeString(const std::string &s) const;
-
 	std::string escapeBlob(const char* s, uint32_t length) const;
 
 	uint64_t getLastInsertId() const {
-		return static_cast<uint64_t>(mysql_insert_id(handle));
+		return lastInsertId;
 	}
 
-	static const char* getClientVersion() {
-		return mysql_get_client_info();
-	}
-
-	uint64_t getMaxPacketSize() const {
-		return maxPacketSize;
-	}
+	static const char* getClientVersion();
 
 private:
-	bool beginTransaction();
-	bool rollback();
-	bool commit();
+	sqlite3_stmt* prepareQuery(std::string_view query);
+	bool executeScript(const std::string &script);
 
-	static bool isRecoverableError(unsigned int error);
+	std::string databasePath;
+	sqlite3* handle = nullptr;
+	std::recursive_mutex databaseLock;
+	inline static thread_local uint64_t lastInsertId = 0;
 
-	MYSQL* handle = nullptr;
-	mutable std::recursive_mutex databaseLock;
-	uint64_t maxPacketSize = 1048576;
-
+	friend class DatabaseManager;
 	friend class DBTransaction;
 };
 
@@ -93,22 +77,15 @@ constexpr auto g_database = Database::getInstance;
 
 class DBResult {
 public:
-	explicit DBResult(MYSQL_RES* res);
-	~DBResult();
-
 	// Non copyable
 	DBResult(const DBResult &) = delete;
 	DBResult &operator=(const DBResult &) = delete;
 
 	template <typename T>
 	T getNumber(const std::string &s) const {
-		auto it = listNames.find(s);
-		if (it == listNames.end()) {
-			g_logger().error("[DBResult::getNumber] - Column '{}' doesn't exist in the result set", s);
-			return T();
-		}
-
-		if (row[it->second] == nullptr) {
+		unsigned long size;
+		const char* value = getStream(s, size);
+		if (!value) {
 			return T();
 		}
 
@@ -117,51 +94,51 @@ public:
 			// Check if the type T is a enum
 			if constexpr (std::is_enum_v<T>) {
 				using underlying_type = std::underlying_type_t<T>;
-				underlying_type value = 0;
+				underlying_type number = 0;
 				if constexpr (std::is_signed_v<underlying_type>) {
-					value = static_cast<underlying_type>(std::stoll(row[it->second]));
+					number = static_cast<underlying_type>(std::stoll(value));
 				} else {
-					value = static_cast<underlying_type>(std::stoull(row[it->second]));
+					number = static_cast<underlying_type>(std::stoull(value));
 				}
-				return static_cast<T>(value);
+				return static_cast<T>(number);
 			}
 			// Check if the type T is signed or unsigned
 			if constexpr (std::is_signed_v<T>) {
 				// Check if the type T is int8_t or int16_t
 				if constexpr (std::is_same_v<T, int8_t> || std::is_same_v<T, int16_t>) {
 					// Use std::stoi to convert string to int8_t
-					data = static_cast<T>(std::stoi(row[it->second]));
+					data = static_cast<T>(std::stoi(value));
 				}
 				// Check if the type T is int32_t
 				else if constexpr (std::is_same_v<T, int32_t>) {
 					// Use std::stol to convert string to int32_t
-					data = static_cast<T>(std::stol(row[it->second]));
+					data = static_cast<T>(std::stol(value));
 				}
 				// Check if the type T is int64_t
 				else if constexpr (std::is_same_v<T, int64_t>) {
 					// Use std::stoll to convert string to int64_t
-					data = static_cast<T>(std::stoll(row[it->second]));
+					data = static_cast<T>(std::stoll(value));
 				}
 				// Check if the type T is time_t
 				else if constexpr (std::is_same_v<T, time_t>) {
 					// Use std::stoll to convert string to time_t (usually long long)
-					data = static_cast<T>(std::stoll(row[it->second]));
+					data = static_cast<T>(std::stoll(value));
 				} else {
 					// Throws exception indicating that type T is invalid
 					g_logger().error("Invalid signed type T");
 				}
 			} else if (std::is_same<T, bool>::value) {
-				data = static_cast<T>(std::stoi(row[it->second]));
+				data = static_cast<T>(std::stoi(value));
 			} else {
 				// Check if the type T is uint8_t or uint16_t or uint32_t
 				if constexpr (std::is_same_v<T, uint8_t> || std::is_same_v<T, uint16_t> || std::is_same_v<T, uint32_t>) {
 					// Use std::stoul to convert string to uint8_t
-					data = static_cast<T>(std::stoul(row[it->second]));
+					data = static_cast<T>(std::stoul(value));
 				}
 				// Check if the type T is uint64_t
 				else if constexpr (std::is_same_v<T, uint64_t>) {
 					// Use std::stoull to convert string to uint64_t
-					data = static_cast<T>(std::stoull(row[it->second]));
+					data = static_cast<T>(std::stoull(value));
 				} else {
 					// Send log indicating that type T is invalid
 					g_logger().error("Column '{}' has an invalid unsigned T is invalid", s);
@@ -190,10 +167,12 @@ public:
 	bool next();
 
 private:
-	MYSQL_RES* handle;
-	MYSQL_ROW row;
+	DBResult() = default;
 
-	std::map<std::string_view, size_t> listNames;
+	using Cell = std::optional<std::string>;
+	std::vector<std::vector<Cell>> rows;
+	std::map<std::string, size_t> listNames;
+	size_t row = 0;
 
 	friend class Database;
 };
@@ -210,146 +189,59 @@ public:
 	bool execute();
 
 private:
-	std::vector<std::string> upsertColumns;
 	std::string query;
 	std::string values;
-	size_t length;
+	std::string upsertClause;
 };
 
 class DBTransaction {
 public:
-	explicit DBTransaction() = default;
+	~DBTransaction();
 
-	~DBTransaction() = default;
-
-	// non-copyable
 	DBTransaction(const DBTransaction &) = delete;
 	DBTransaction &operator=(const DBTransaction &) = delete;
-
-	// non-movable
-	DBTransaction(const DBTransaction &&) = delete;
-	DBTransaction &operator=(const DBTransaction &&) = delete;
 
 	template <typename Func>
 	static bool executeWithinTransaction(const Func &callback)
 		requires std::invocable<Func>
 	{
-		DBTransaction transaction;
-		try {
-			if (!transaction.begin()) {
-				g_logger().error("[{}] Failed to begin transaction", __FUNCTION__);
-				return false;
-			}
-
-			const bool result = callback();
-
-			if (!transaction.commit()) {
-				return false;
-			}
-
-			return result;
-		} catch (const std::exception &exception) {
-			transaction.rollback();
-			g_logger().error("[{}] Error occurred during transaction, error: {}", __FUNCTION__, exception.what());
-			return false;
-		}
+		return execute(callback, false);
 	}
 
 	template <typename Func>
 	static bool executeWithinTransactionRollbackOnFailure(const Func &callback)
 		requires std::invocable<Func>
 	{
-		DBTransaction transaction;
-		try {
-			if (!transaction.begin()) {
-				g_logger().error("[{}] Failed to begin transaction", __FUNCTION__);
-				return false;
-			}
-
-			if (!callback()) {
-				transaction.rollback();
-				return false;
-			}
-
-			return transaction.commit();
-		} catch (const std::exception &exception) {
-			transaction.rollback();
-			g_logger().error("[{}] Error occurred during transaction, error: {}", __FUNCTION__, exception.what());
-			return false;
-		}
+		return execute(callback, true);
 	}
 
 private:
-	bool begin() {
-		// Ensure that the transaction has not already been started
-		if (state != STATE_NO_START) {
-			return false;
-		}
+	explicit DBTransaction(Database &database);
 
+	template <typename Func>
+	static bool execute(const Func &callback, bool rollbackOnFailure) {
 		try {
-			// Start the transaction
-			state = STATE_START;
-			return Database::getInstance().beginTransaction();
-		} catch (const std::exception &exception) {
-			// An error occurred while starting the transaction
-			state = STATE_NO_START;
-			g_logger().error("[{}] An error occurred while starting the transaction, error: {}", __FUNCTION__, exception.what());
-			return false;
-		}
-	}
-
-	void rollback() {
-		// Ensure that the transaction has been started
-		if (state != STATE_START) {
-			return;
-		}
-
-		try {
-			// Rollback the transaction
-			state = STATE_NO_START;
-			Database::getInstance().rollback();
-		} catch (const std::exception &exception) {
-			// An error occurred while rolling back the transaction
-			g_logger().error("[{}] An error occurred while rolling back the transaction, error: {}", __FUNCTION__, exception.what());
-		}
-	}
-
-	bool commit() {
-		// Ensure that the transaction has been started
-		if (state != STATE_START) {
-			g_logger().error("Transaction not started");
-			return false;
-		}
-
-		try {
-			// Commit the transaction
-			state = STATE_COMMIT;
-			if (!Database::getInstance().commit()) {
-				state = STATE_NO_START;
-				g_logger().error("[{}] Commit returned false", __FUNCTION__);
+			DBTransaction transaction(g_database());
+			if (!transaction.active) {
 				return false;
 			}
-
-			return true;
-		} catch (const std::exception &exception) {
-			// An error occurred while committing the transaction
-			state = STATE_NO_START;
-			g_logger().error("[{}] An error occurred while committing the transaction, error: {}", __FUNCTION__, exception.what());
+			const bool succeeded = callback();
+			if (!succeeded && rollbackOnFailure) {
+				return false;
+			}
+			return transaction.commit() && succeeded;
+		} catch (const std::exception &error) {
+			g_logger().error("Error during database transaction: {}", error.what());
 			return false;
 		}
 	}
 
-	bool isStarted() const {
-		return state == STATE_START;
-	}
-	bool isCommitted() const {
-		return state == STATE_COMMIT;
-	}
-	bool isRolledBack() const {
-		return state == STATE_NO_START;
-	}
+	bool commit();
 
-	TransactionStates_t state = STATE_NO_START;
+	Database &database;
+	std::unique_lock<std::recursive_mutex> lock;
+	bool active = false;
+	bool nested = false;
 };
 
 class DatabaseException : public std::exception {

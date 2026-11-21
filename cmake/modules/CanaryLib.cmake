@@ -113,7 +113,7 @@ foreach(
                pugixml::pugixml
                spdlog::spdlog
                unofficial::argon2::libargon2
-               unofficial::libmariadb
+               ${ZATHROTH_SQLITE_TARGET}
                nlohmann_json::nlohmann_json
                protobuf
     )
@@ -144,7 +144,7 @@ foreach(
     if(MSVC)
         target_link_libraries(
             ${core_target}
-            PUBLIC ${CMAKE_THREAD_LIBS_INIT} ${MYSQL_CLIENT_LIBS}
+            PUBLIC ${CMAKE_THREAD_LIBS_INIT}
         )
     else()
         target_link_libraries(

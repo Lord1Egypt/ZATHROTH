@@ -1,8 +1,8 @@
 {
-  "name": "opentibiabr-canary",
+  "name": "zathroth",
   "version": "1.4.1",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/opentibiabr/canary.git"
+    "url": "git+https://github.com/Lord1Egypt/ZATHROTH.git"
   }
 }

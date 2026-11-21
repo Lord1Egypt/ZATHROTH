@@ -80,7 +80,7 @@ void IOMapSerialize::loadHouseItems(Map* map) {
 }
 
 bool IOMapSerialize::saveHouseItems() {
-	bool success = DBTransaction::executeWithinTransaction([]() {
+	bool success = DBTransaction::executeWithinTransactionRollbackOnFailure([]() {
 		return SaveHouseItemsGuard();
 	});
 
@@ -389,7 +389,7 @@ bool IOMapSerialize::loadHouseInfo() {
 }
 
 bool IOMapSerialize::saveHouseInfo() {
-	bool success = DBTransaction::executeWithinTransaction([]() {
+	bool success = DBTransaction::executeWithinTransactionRollbackOnFailure([]() {
 		return SaveHouseInfoGuard();
 	});
 

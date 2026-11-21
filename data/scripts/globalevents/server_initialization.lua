@@ -1,7 +1,5 @@
 -- Function to perform database cleanup tasks
 local function cleanupDatabase()
-	db.query("TRUNCATE TABLE `players_online`")
-
 	local currentTime = os.time()
 	db.asyncQuery("DELETE FROM `guild_wars` WHERE `status` IN (0, 2, 3) OR (`status` = 0 AND (`started` + 72 * 60 * 60) <= " .. currentTime .. ")")
 	db.asyncQuery("DELETE FROM `players` WHERE `deletion` != 0 AND `deletion` < " .. currentTime)
@@ -25,16 +23,6 @@ local function moveExpiredBansToHistory()
 		until not Result.next(resultId)
 
 		Result.free(resultId)
-	end
-end
-
--- Function to store towns in the database
-local function storeTownsInDatabase()
-	db.query("TRUNCATE TABLE `towns`")
-
-	for i, town in ipairs(Game.getTowns()) do
-		local position = town:getTemplePosition()
-		db.query("INSERT INTO `towns` (`id`, `name`, `posx`, `posy`, `posz`) VALUES (" .. town:getId() .. ", " .. db.escapeString(town:getName()) .. ", " .. position.x .. ", " .. position.y .. ", " .. position.z .. ")")
 	end
 end
 
@@ -113,7 +101,7 @@ end
 local function resetAccountSessions()
 	if AUTH_TYPE == "session" then
 		if configManager.getBoolean(configKeys.RESET_SESSIONS_ON_STARTUP) then
-			db.query("TRUNCATE TABLE `account_sessions`")
+			db.query("DELETE FROM `account_sessions`")
 		else
 			db.query("DELETE FROM `account_sessions` WHERE `expires` <= " .. os.time())
 		end
@@ -128,7 +116,6 @@ function serverInitialization.onStartup()
 
 	cleanupDatabase()
 	moveExpiredBansToHistory()
-	storeTownsInDatabase()
 	checkAndLogDuplicateValues({ "Global", "GlobalStorage", "Storage" })
 	updateEventRates()
 	HirelingsInit()
