@@ -12123,7 +12123,8 @@ void Game::updateForgeableMonsters() {
 
 void Game::createFiendishMonsters() {
 	uint32_t fiendishLimit = g_configManager().getNumber(FORGE_FIENDISH_CREATURES_LIMIT); // Fiendish Creatures limit
-	if (fiendishMonsters.size() >= fiendishLimit) {
+	// Nothing on the map can become a forge monster (e.g. a map without spawns).
+	if (fiendishMonsters.size() >= fiendishLimit || forgeableMonsters.empty()) {
 		return;
 	}
 
@@ -12154,7 +12155,8 @@ void Game::createFiendishMonsters() {
 
 void Game::createInfluencedMonsters() {
 	uint32_t influencedLimit = g_configManager().getNumber(FORGE_INFLUENCED_CREATURES_LIMIT);
-	if (influencedMonsters.size() >= influencedLimit) {
+	// Nothing on the map can become a forge monster (e.g. a map without spawns).
+	if (influencedMonsters.size() >= influencedLimit || forgeableMonsters.empty()) {
 		return;
 	}
 

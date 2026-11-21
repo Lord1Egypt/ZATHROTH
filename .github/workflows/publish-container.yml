@@ -61,6 +61,10 @@ jobs:
           grep -F "Compiled by Mohamed Mounir" zathroth-startup.log
           grep -F "akim.221992@gmail.com" zathroth-startup.log
           python3 .github/scripts/zathroth-smoke.py
+          if docker compose logs --no-color game | grep -F "due to no progress"; then
+            echo "Forge creation warns on a map without forgeable monsters" >&2
+            exit 1
+          fi
           docker compose exec -T accounts python3 - <<'PYTHON'
           import os
           import sqlite3
