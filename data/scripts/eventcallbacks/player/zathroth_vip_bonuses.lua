@@ -8,3 +8,21 @@ function callback.playerOnInventoryUpdate(player, item, slot, equip)
 end
 
 callback:register()
+
+local logout = CreatureEvent("ZathrothVipLogout")
+
+function logout.onLogout(player)
+	zathrothVipRememberVitals(player)
+	return true
+end
+
+logout:register()
+
+local login = CreatureEvent("ZathrothVipLogin")
+
+function login.onLogin(player)
+	zathrothVipRestoreVitals(player)
+	return true
+end
+
+login:register()

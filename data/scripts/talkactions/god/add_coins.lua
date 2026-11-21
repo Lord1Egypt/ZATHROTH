@@ -3,11 +3,12 @@ local addCoins = TalkAction("/addcoins")
 function addCoins.onSay(player, words, param)
 	logCommand(player, words, param)
 
-	local split = param:split(",")
-	local target = split[1] and Player(split[1]:trim())
-	local amount = tonumber(split[2] and split[2]:trim())
-	if not target or not amount or amount < 1 or amount ~= math.floor(amount) or amount > 100000000 then
-		player:sendCancelMessage("Usage: /addcoins <online player name>, <amount from 1 to 100000000>")
+	-- Accepts "name, amount" and "name amount".
+	local name, amount = param:match("^%s*(.-)%s*,?%s*(%d+)%s*$")
+	local target = name and name ~= "" and Player(name)
+	amount = tonumber(amount)
+	if not target or not amount or amount < 1 or amount > 100000000 then
+		player:sendCancelMessage("Usage: /addcoins <online player name> <amount from 1 to 100000000>")
 		return true
 	end
 
@@ -24,6 +25,6 @@ function addCoins.onSay(player, words, param)
 end
 
 addCoins:separator(" ")
-addCoins:setDescription("[Usage]: /addcoins <player name>, <amount>, adds Tibia Coins")
+addCoins:setDescription("[Usage]: /addcoins <player name> <amount>, adds Tibia Coins")
 addCoins:groupType("god")
 addCoins:register()

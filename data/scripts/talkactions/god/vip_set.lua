@@ -46,7 +46,8 @@ local function addPiece(container, piece, description)
 	for attribute, value in pairs(piece.attributes or {}) do
 		item:setAttribute(attribute, value)
 	end
-	item:setAttribute(ITEM_ATTRIBUTE_WEIGHT, 100)
+	-- The weight is per piece: 1 oz for single items, 0.01 oz for stackables.
+	item:setAttribute(ITEM_ATTRIBUTE_WEIGHT, piece.count and 1 or 100)
 	return item
 end
 

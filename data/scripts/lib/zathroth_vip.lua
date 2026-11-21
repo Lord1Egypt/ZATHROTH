@@ -254,38 +254,89 @@ local function addVipCondition(player, conditionType, subId, parameters)
 	player:addCondition(condition)
 end
 
--- Rebuilds every VIP bonus from what the player wears right now.
+-- VIP item name whose bonuses each player's slot carries, by player ID.
+local appliedBonuses = {}
+
+-- Rebuilds the VIP bonuses of every slot whose VIP item changed. Unchanged
+-- slots keep their conditions: removing a health or mana bonus even for a
+-- moment would cut current health and mana down to the lower maximum.
+local function giveBack(player, health, mana)
+	local lostHealth = math.min(health, player:getMaxHealth()) - player:getHealth()
+	if lostHealth > 0 then
+		player:addHealth(lostHealth)
+	end
+	local lostMana = math.min(mana, player:getMaxMana()) - player:getMana()
+	if lostMana > 0 then
+		player:addMana(lostMana)
+	end
+end
+
+-- Logging out removes the VIP conditions before the player is saved, which
+-- cuts health and mana to the base maximum. The logout event stores them
+-- first; the login event, which runs after the equipment bonuses are back,
+-- gives them back.
+function zathrothVipRememberVitals(player)
+	appliedBonuses[player:getId()] = nil
+	local vitals = player:kv():scoped("zathroth-vip")
+	vitals:set("health", player:getHealth())
+	vitals:set("mana", player:getMana())
+end
+
+function zathrothVipRestoreVitals(player)
+	local vitals = player:kv():scoped("zathroth-vip")
+	local health = vitals:get("health")
+	if health then
+		giveBack(player, health, vitals:get("mana") or 0)
+		vitals:remove("health")
+		vitals:remove("mana")
+	end
+end
+
 function zathrothVipRefresh(player)
+	local applied = appliedBonuses[player:getId()] or {}
+	appliedBonuses[player:getId()] = applied
+	local health, mana = player:getHealth(), player:getMana()
+
 	for slot = CONST_SLOT_FIRST, CONST_SLOT_LAST do
 		local subId = VIP_SUBID + slot
-		for _, conditionType in ipairs(VIP_CONDITION_TYPES) do
-			player:removeCondition(conditionType, CONDITIONID_DEFAULT, subId)
-		end
-
 		local item = player:getSlotItem(slot)
-		local bonus = item and ZATHROTH_VIP_BONUSES[item:getName()]
-		if bonus then
-			if bonus.attributes then
-				addVipCondition(player, CONDITION_ATTRIBUTES, subId, bonus.attributes)
+		local name = item and item:getName()
+		local bonus = name and ZATHROTH_VIP_BONUSES[name]
+		local wanted = bonus and name or nil
+		-- Every bonus has speed, so a missing haste condition means the
+		-- bonuses are gone (for example after logging in again).
+		local present = player:getCondition(CONDITION_HASTE, CONDITIONID_DEFAULT, subId) ~= nil
+		if applied[slot] ~= wanted or (wanted and not present) then
+			for _, conditionType in ipairs(VIP_CONDITION_TYPES) do
+				player:removeCondition(conditionType, CONDITIONID_DEFAULT, subId)
 			end
-			if bonus.speed then
+			applied[slot] = wanted
+			if bonus then
+				if bonus.attributes then
+					addVipCondition(player, CONDITION_ATTRIBUTES, subId, bonus.attributes)
+				end
 				addVipCondition(player, CONDITION_HASTE, subId, { [CONDITION_PARAM_SPEED] = bonus.speed })
-			end
-			if bonus.regeneration then
-				local regeneration = bonus.regeneration
-				addVipCondition(player, CONDITION_REGENERATION, subId, {
-					[CONDITION_PARAM_HEALTHGAIN] = regeneration.health or 0,
-					[CONDITION_PARAM_HEALTHTICKS] = VIP_REGENERATION_TICKS,
-					[CONDITION_PARAM_MANAGAIN] = regeneration.mana or 0,
-					[CONDITION_PARAM_MANATICKS] = VIP_REGENERATION_TICKS,
-				})
-			end
-			if bonus.light then
-				addVipCondition(player, CONDITION_LIGHT, subId, {
-					[CONDITION_PARAM_LIGHT_LEVEL] = bonus.light.level,
-					[CONDITION_PARAM_LIGHT_COLOR] = bonus.light.color,
-				})
+				if bonus.regeneration then
+					local regeneration = bonus.regeneration
+					addVipCondition(player, CONDITION_REGENERATION, subId, {
+						[CONDITION_PARAM_HEALTHGAIN] = regeneration.health or 0,
+						[CONDITION_PARAM_HEALTHTICKS] = VIP_REGENERATION_TICKS,
+						[CONDITION_PARAM_MANAGAIN] = regeneration.mana or 0,
+						[CONDITION_PARAM_MANATICKS] = VIP_REGENERATION_TICKS,
+					})
+				end
+				if bonus.light then
+					addVipCondition(player, CONDITION_LIGHT, subId, {
+						[CONDITION_PARAM_LIGHT_LEVEL] = bonus.light.level,
+						[CONDITION_PARAM_LIGHT_COLOR] = bonus.light.color,
+					})
+				end
 			end
 		end
 	end
+
+	-- Bonuses are added one slot at a time, and the engine cuts health and
+	-- mana to each intermediate maximum, so give back what was cut, up to the
+	-- new maximum.
+	giveBack(player, health, mana)
 end

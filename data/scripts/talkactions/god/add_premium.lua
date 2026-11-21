@@ -5,11 +5,12 @@ local addPremium = TalkAction("/addpremium")
 function addPremium.onSay(player, words, param)
 	logCommand(player, words, param)
 
-	local split = param:split(",")
-	local target = split[1] and Player(split[1]:trim())
-	local days = tonumber(split[2] and split[2]:trim())
-	if not target or not days or days < 1 or days > MAX_DAYS or days ~= math.floor(days) then
-		player:sendCancelMessage(string.format("Usage: /addpremium <online player name>, <days from 1 to %d>", MAX_DAYS))
+	-- Accepts "name, days" and "name days".
+	local name, days = param:match("^%s*(.-)%s*,?%s*(%d+)%s*$")
+	local target = name and name ~= "" and Player(name)
+	days = tonumber(days)
+	if not target or not days or days < 1 or days > MAX_DAYS then
+		player:sendCancelMessage(string.format("Usage: /addpremium <online player name> <days from 1 to %d>", MAX_DAYS))
 		return true
 	end
 
@@ -23,6 +24,6 @@ function addPremium.onSay(player, words, param)
 end
 
 addPremium:separator(" ")
-addPremium:setDescription("[Usage]: /addpremium <player name>, <days>, adds premium days to the player's account")
+addPremium:setDescription("[Usage]: /addpremium <player name> <days>, adds premium days to the player's account")
 addPremium:groupType("god")
 addPremium:register()
