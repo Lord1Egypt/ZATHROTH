@@ -255,9 +255,7 @@ interruption, cache reuse, command compatibility, output locks, optional
 restart requests, ARM64 environment selection and preservation of a running
 old executable. They also verify dry-run failure and up-to-date behavior.
 
-No game database or real service is used. The dedicated
-[`recompile script` workflow](../../.github/workflows/recompile.yml) runs these
-checks for relevant pull requests.
+These checks exercise local build tooling in temporary directories.
 
 ## Troubleshooting
 

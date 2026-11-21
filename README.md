@@ -20,9 +20,11 @@ The account manager and game share one named Docker volume, `zathroth_world`. SQ
 
 1. Open `http://192.168.1.104:8088/` in a browser and sign in with username `1` and password `1`.
 2. Create your player account. The manager signs you in automatically so you can create or manage its characters. The shared login can register accounts only.
-3. Configure OTClient Redemption on Windows for protocol `1525` and supply the matching game assets. Sign in with the new account and select your character. The login service advertises `192.168.1.104:7172` as the game endpoint. [OTClient 15.25 setup](https://github.com/opentibiabr/otclient/wiki/Tutorial-to-use-OTC-in-Canary-main)
+3. Configure OTClient Redemption on Windows for protocol `1525`. Sign in with the new account and select your character. The login service advertises `192.168.1.104:7172` as the game endpoint.
 
-For OTClient Redemption, add this entry to `Servers_init` in `init.lua` with the server list enabled.
+With OTClient Redemption 4.2, extract its source ZIP and place `otclient_gl_x64.exe` from the Windows OpenGL ZIP beside `init.lua`. Supply the matching assets in `data/things/1525/`. [OTClient 4.2 downloads](https://github.com/opentibiabr/otclient/releases/tag/4.2) · [15.25 asset setup](https://github.com/opentibiabr/otclient/wiki/Tutorial-to-use-OTC-in-Canary-main)
+
+Add this entry to `Servers_init` in `init.lua` with the server list enabled.
 
 ```lua
 ["http://192.168.1.104:8088/login"] = {
