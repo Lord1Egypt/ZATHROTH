@@ -11,13 +11,15 @@ function addCoins.onSay(player, words, param)
 		return true
 	end
 
-	if not target:addTibiaCoins(amount) then
+	-- Store offers default to transferable coins, and the client checks the
+	-- transferable balance before it lets a player buy, so add those.
+	if not target:addTransferableCoins(amount) then
 		player:sendCancelMessage("Adding Tibia Coins failed. See the server log.")
 		return true
 	end
 
 	target:sendTextMessage(MESSAGE_EVENT_ADVANCE, string.format("%s has added %d Tibia Coins to your account.", player:getName(), amount))
-	player:sendTextMessage(MESSAGE_EVENT_ADVANCE, string.format("Added %d Tibia Coins to %s. The account now has %d.", amount, target:getName(), target:getTibiaCoins()))
+	player:sendTextMessage(MESSAGE_EVENT_ADVANCE, string.format("Added %d Tibia Coins to %s. The account now has %d.", amount, target:getName(), target:getTransferableCoins() + target:getTibiaCoins()))
 	return true
 end
 
