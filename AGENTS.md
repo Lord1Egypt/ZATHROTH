@@ -49,3 +49,7 @@ The global Git, commit, PR, C++ header, exception, and documentation policies ap
 
 - Use the root `compose.yaml` and Dockerfile for the ZATHROTH deployment. The game and account service share the SQLite volume.
 - Use the account service at `http://<host>:8088/login` for modern client login. Verify both image architectures with the container workflow.
+
+## ZATHROTH
+
+This repository is ZATHROTH, a Canary fork running SQLite on the owner's ARM64 server. Read `docs/zathroth.md` before changing anything: it covers deployment, the change workflow, local testing and where every ZATHROTH addition lives.
