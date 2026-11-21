@@ -32,8 +32,7 @@ logs/
 config.lua
 apply.patch
 
-# Keep the runtime image lighter. The entrypoint downloads this map on first run
-# through CANARY_MAP_URL when data-otservbr-global is selected.
+# Keep a locally downloaded global map out of the build context.
 data-otservbr-global/world/otservbr.otbm
 
 # Local databases, credentials, and Python bytecode

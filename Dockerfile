@@ -21,23 +21,26 @@ RUN baseline="$(python3 -c 'import json; print(json.load(open("vcpkg.json"))["bu
     && git -C "$VCPKG_ROOT" checkout --detach FETCH_HEAD \
     && "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
-RUN --mount=type=cache,id=zathroth-vcpkg-downloads,target=/opt/vcpkg/downloads,sharing=locked \
+RUN --mount=type=cache,id=zathroth-vcpkg-downloads-${TARGETARCH},target=/opt/vcpkg/downloads,sharing=locked \
     case "$TARGETARCH" in \
-      amd64) triplet=x64-linux ;; \
-      arm64) triplet=arm64-linux ;; \
+      amd64) triplet=x64-linux-release ;; \
+      arm64) triplet=arm64-linux-release ;; \
       *) echo "Unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac \
+    && printf '%s\n' "$triplet" > /opt/vcpkg-triplet \
     && VCPKG_MAX_CONCURRENCY=3 "$VCPKG_ROOT/vcpkg" install \
         --triplet="$triplet" --host-triplet="$triplet" --x-install-root=/opt/vcpkg_installed \
-        --clean-after-build
+        --clean-buildtrees-after-build --clean-packages-after-build
 
 FROM dependencies AS build
 
 ARG ZATHROTH_BUILD_JOBS=3
 
 COPY . .
-RUN cmake --preset linux-release -DCMAKE_BUILD_TYPE=Release -DTOGGLE_BIN_FOLDER=ON \
+RUN triplet="$(cat /opt/vcpkg-triplet)" \
+    && cmake --preset linux-release -DCMAKE_BUILD_TYPE=Release -DTOGGLE_BIN_FOLDER=ON \
         -DOPTIONS_ENABLE_IPO=OFF -DOPTIONS_ENABLE_SCCACHE=OFF \
+        -DVCPKG_HOST_TRIPLET="$triplet" -DVCPKG_TARGET_TRIPLET="$triplet" \
         -DVCPKG_MANIFEST_INSTALL=OFF -DVCPKG_INSTALLED_DIR=/opt/vcpkg_installed \
     && cmake --build --preset linux-release --parallel "$ZATHROTH_BUILD_JOBS" \
     && strip build/linux-release/bin/canary
@@ -51,9 +54,9 @@ LABEL org.opencontainers.image.title="ZATHROTH" \
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libargon2-1 libgomp1 python3 \
+    ca-certificates libargon2-1 libatomic1 libgomp1 libstdc++6 python3 \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --user-group --uid 10001 --no-create-home zathroth \
+    && useradd --user-group --uid 10001 --no-create-home zathroth \
     && install -d -o zathroth -g zathroth /opt/zathroth /var/lib/zathroth
 
 WORKDIR /opt/zathroth

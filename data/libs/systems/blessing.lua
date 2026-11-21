@@ -50,13 +50,13 @@ Blessings.LossPercent = {
 -- Table structure `blessings_history`
 --
 CREATE TABLE IF NOT EXISTS `blessings_history` (
-  `id` int(11) NOT NULL,
-  `player_id` int(11) NOT NULL,
-  `blessing` tinyint(4) NOT NULL,
-  `loss` tinyint(1) NOT NULL,
-  `timestamp` int(11) NOT NULL,
+  `id` INTEGER NOT NULL,
+  `player_id` INTEGER NOT NULL,
+  `blessing` INTEGER NOT NULL,
+  `loss` INTEGER NOT NULL,
+  `timestamp` INTEGER NOT NULL,
   CONSTRAINT `blessings_history_pk` PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+);
 --]=====]
 
 Blessings.DebugPrint = function(content, pre, pos)

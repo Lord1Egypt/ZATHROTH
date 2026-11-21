@@ -12,6 +12,7 @@
 #include "config/configmanager.hpp"
 #include "lua/functions/core/libs/core_libs_functions.hpp"
 #include "lua/scripts/luascript.hpp"
+#include "utils/benchmark.hpp"
 
 #ifndef USE_PRECOMPILED_HEADERS
 	#include <algorithm>

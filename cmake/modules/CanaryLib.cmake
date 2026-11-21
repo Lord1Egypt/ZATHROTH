@@ -170,8 +170,7 @@ foreach(
     )
         target_compile_options(
             ${core_target}
-            PRIVATE $<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>:-O3
-                    -march=native>
+            PRIVATE $<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>:-O3>
         )
     elseif(MSVC)
         target_compile_options(

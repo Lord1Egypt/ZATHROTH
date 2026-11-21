@@ -340,7 +340,7 @@ class AccountHandler(BaseHTTPRequestHandler):
             self.json_response({"errorCode": 3, "errorMessage": str(error)})
         except (ValueError, RecursionError):
             self.json_response({"errorCode": 2, "errorMessage": "Invalid login request."}, HTTPStatus.BAD_REQUEST)
-        except (sqlite3.Error, OSError):
+        except sqlite3.Error:
             self.json_response({"errorCode": 2, "errorMessage": "The game database is starting. Try again shortly."}, HTTPStatus.SERVICE_UNAVAILABLE)
 
     def game_status(self, action):
@@ -350,7 +350,10 @@ class AccountHandler(BaseHTTPRequestHandler):
                 "gamingyoutubestreams": "0", "gamingyoutubeviewer": "0",
             }
         if action == "eventschedule":
-            return client_events()
+            try:
+                return client_events()
+            except (OSError, ValueError):
+                return {"errorCode": 2, "errorMessage": "The event calendar is unavailable."}
         if action == "boostedcreature":
             creature, boss = self.accounts.boosted_races()
             return {"boostedcreature": bool(creature), "creatureraceid": creature, "bossraceid": boss}

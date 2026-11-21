@@ -21,7 +21,7 @@ New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $OutputDir = (Resolve-Path -LiteralPath $OutputDir).Path
 $OutputDirWithSeparator = $OutputDir.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
 
-$Patterns = "link.exe|/VERBOSE:LIB|/MAP|LINK_LIBRARIES|libcrypto|libssl|libcurl|mariadbclient|lua51|libprotobuf|libprotobuf-lite|libprotoc|absl_|fmt|spdlog|pugixml|argon2|zs\.lib|bcrypt|ncrypt|crypt32|ws2_32|Searching|Found|Loaded|Referenced in|Processed|LNK"
+$Patterns = "link.exe|/VERBOSE:LIB|/MAP|LINK_LIBRARIES|libcrypto|libssl|libcurl|sqlite3|lua51|libprotobuf|libprotobuf-lite|libprotoc|absl_|fmt|spdlog|pugixml|argon2|zs\.lib|bcrypt|ncrypt|crypt32|ws2_32|Searching|Found|Loaded|Referenced in|Processed|LNK"
 
 Write-Host "InputDir: $InputDir"
 Write-Host "OutputDir: $OutputDir"
@@ -54,7 +54,7 @@ $Map = $MapFiles | Select-Object -First 1
 if ($Map) {
     Write-Host "Map: $($Map.FullName)"
 
-    Select-String $Map.FullName -Pattern "libcrypto|libssl|libcurl|mariadbclient|libprotobuf|libprotobuf-lite|libprotoc|absl_|fmt|spdlog|pugixml|argon2|zs\.lib" -CaseSensitive:$false |
+    Select-String $Map.FullName -Pattern "libcrypto|libssl|libcurl|sqlite3|libprotobuf|libprotobuf-lite|libprotoc|absl_|fmt|spdlog|pugixml|argon2|zs\.lib" -CaseSensitive:$false |
         Set-Content (Join-Path $OutputDir "map-libs.txt") -Encoding utf8
 
     Select-String $Map.FullName -Pattern "libcrypto|libssl|BN_|RSA_|EVP_|PEM_|BIO_|SSL_|ERR_|CRYPTO_|SHA|HMAC|RAND_|AES_|X509_|OPENSSL_" -CaseSensitive:$false |

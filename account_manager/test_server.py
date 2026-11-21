@@ -3,6 +3,7 @@
 import hashlib
 from http.cookiejar import CookieJar
 import json
+import os
 from pathlib import Path
 import re
 import sqlite3
@@ -41,6 +42,11 @@ class Browser:
 
     def game(self, identifier, password):
         payload = json.dumps({"type": "login", "email": identifier, "password": password}).encode()
+        status, body = self.request("/login", payload, {"Content-Type": "application/json"})
+        return status, json.loads(body)
+
+    def game_status(self, action):
+        payload = json.dumps({"type": action}).encode()
         status, body = self.request("/login", payload, {"Content-Type": "application/json"})
         return status, json.loads(body)
 
@@ -84,6 +90,7 @@ class AccountManagerTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(game["playdata"]["worlds"][0]["externaladdressprotected"], "192.168.1.104")
         self.assertEqual(game["playdata"]["worlds"][0]["externalportprotected"], 7172)
+        self.assertEqual(game["playdata"]["worlds"][0]["pvptype"], 3)
         arden = game["playdata"]["characters"][0]
         self.assertEqual((arden["name"], arden["level"], arden["vocation"], arden["outfitid"]), ("Arden Fox", 8, "Monk", 136))
 
@@ -94,6 +101,9 @@ class AccountManagerTest(unittest.TestCase):
             self.assertEqual((session, town_id, condition_type), ((account_id,), 1, "blob"))
             db.execute("INSERT INTO players_online (player_id) VALUES (?)", (arden["characterid"],))
 
+        self.assertEqual(self.browser.game_status("cacheinfo")[1]["playersonline"], 1)
+        self.assertIn("creatureraceid", self.browser.game_status("boostedcreature")[1])
+        self.assertIsInstance(self.browser.game_status("eventschedule")[1]["eventlist"], list)
         self.assertEqual(self.browser.form("delete", character=arden["characterid"])[0], 400)
         with sqlite3.connect(self.db_path) as db:
             db.execute("DELETE FROM players_online")
@@ -127,6 +137,19 @@ class AccountManagerTest(unittest.TestCase):
         self.assertIn("already in use", other.form("character", name="arden fox", sex="1", vocation="2")[1])
         self.assertEqual(other.form("delete", character=character["characterid"])[0], 400)
         self.assertEqual(self.browser.game("adventurer", "Adventure pass")[1]["playdata"]["characters"][0]["name"], "Arden Fox")
+
+
+@unittest.skipUnless(os.getenv("ZATHROTH_TEST_URL"), "set ZATHROTH_TEST_URL for the read-only live smoke")
+class LiveAccountManagerTest(unittest.TestCase):
+    def test_running_service(self):
+        browser = Browser(os.environ["ZATHROTH_TEST_URL"].rstrip("/"))
+        status, body = browser.request("/health")
+        self.assertEqual(status, 200, body)
+        self.assertTrue(json.loads(body)["ready"])
+        self.assertEqual(browser.request("/")[0], 200)
+        self.assertIn("Create an account", browser.form("signin", identifier="1", password="1")[1])
+        self.assertIn("in your browser", browser.game("1", "1")[1]["errorMessage"])
+        self.assertIn("playersonline", browser.game_status("cacheinfo")[1])
 
 
 if __name__ == "__main__":
