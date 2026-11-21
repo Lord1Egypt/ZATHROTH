@@ -4,8 +4,10 @@ x-runtime: &runtime
   image: "${ZATHROTH_IMAGE:-ghcr.io/lord1egypt/zathroth:latest}"
   restart: unless-stopped
   init: true
-  # The server runs from this folder: it reads data/, data-canary/ and
-  # config.lua.dist here, and keeps the SQLite database in ./database/.
+  # The server runs from this folder: it reads data/, data-otservbr-global/
+  # and config.lua.dist here, downloads the map into
+  # data-otservbr-global/world/ on the first start, and keeps the SQLite
+  # database in ./database/.
   volumes:
     - .:/opt/zathroth
 
@@ -42,7 +44,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 8
-      start_period: 90s
+      # The first start downloads the map, and loading it takes minutes on
+      # small ARM boards.
+      start_period: 15m
 
   accounts:
     <<: *runtime

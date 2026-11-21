@@ -24,13 +24,41 @@ case "${1:-game}" in
 		run python3 account_manager/server.py
 		;;
 	game)
+		# The real map is too large for Git; fetch the release that matches
+		# this server version once and keep it in the cloned folder.
+		map=data-otservbr-global/world/otservbr.otbm
+		if [ ! -f "$map" ]; then
+			echo "Downloading the game map (185 MB). This happens only on the first start."
+			python3 - "$map" "$ZATHROTH_MAP_URL" "$ZATHROTH_MAP_SHA256" <<'PYTHON'
+import hashlib
+import os
+import sys
+import urllib.request
+
+path, url, expected = sys.argv[1:]
+partial = path + ".part"
+digest = hashlib.sha256()
+with urllib.request.urlopen(url, timeout=60) as response, open(partial, "wb") as out:
+    while chunk := response.read(1 << 20):
+        digest.update(chunk)
+        out.write(chunk)
+if digest.hexdigest() != expected:
+    os.remove(partial)
+    sys.exit(f"Map download failed its SHA-256 check (got {digest.hexdigest()})")
+os.replace(partial, path)
+PYTHON
+			if [ "$(id -u)" = 0 ]; then
+				chown "$uid:$gid" "$map"
+			fi
+		fi
+
 		cp config.lua.dist config.lua
 		cat >> config.lua <<'LUA'
 
 -- Container settings
 serverName = "ZATHROTH"
-dataPackDirectory = "data-canary"
-mapName = "canary"
+dataPackDirectory = "data-otservbr-global"
+mapName = "otservbr"
 toggleDownloadMap = false
 generateLuaApiDocs = false
 

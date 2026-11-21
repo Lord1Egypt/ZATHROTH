@@ -64,11 +64,14 @@ COPY --from=build /src/build/linux-release/bin/canary /usr/local/bin/zathroth
 COPY LICENSE config.lua.dist schema.sql key.pem ./
 COPY data ./data
 COPY data-canary ./data-canary
+COPY data-otservbr-global ./data-otservbr-global
 COPY account_manager ./account_manager
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/zathroth-start
 
 # The entrypoint starts as root only to drop to the owner of /opt/zathroth.
 ENV ZATHROTH_DB_PATH=/opt/zathroth/database/zathroth.sqlite3 \
+    ZATHROTH_MAP_URL=https://github.com/opentibiabr/canary/releases/download/v3.6.1/otservbr.otbm \
+    ZATHROTH_MAP_SHA256=a80de1dda6a9aca3956a9d5b7fb2e0caebb451570d26853fc21beb40d5f31da2 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 EXPOSE 7171/tcp 7172/tcp 8088/tcp

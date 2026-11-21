@@ -56,7 +56,7 @@ jobs:
           ZATHROTH_IMAGE: ${{ steps.image.outputs.tag }}
           ZATHROTH_SERVER_IP: 127.0.0.1
         run: |
-          docker compose up -d --pull never --wait --wait-timeout 150
+          docker compose up -d --pull never --wait --wait-timeout 900
           docker compose logs --no-color game > zathroth-startup.log
           grep -F "Compiled by Mohamed Mounir" zathroth-startup.log
           grep -F "akim.221992@gmail.com" zathroth-startup.log

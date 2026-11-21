@@ -1,6 +1,6 @@
 # ZATHROTH
 
-ZATHROTH is a Canary-based game server for protocol **15.25**. It runs with SQLite and ships a starter world, an in-game 1/1 Account Manager, a browser account manager, and the HTTP login server used by the Windows client. Docker images are built for Linux AMD64 and ARM64.
+ZATHROTH is a Canary-based game server for protocol **15.25**. It runs with SQLite on the full OTServBR global map (Thais, Carlin, Venore and every other town, with their monsters, NPCs and quests), and ships an in-game 1/1 Account Manager, a browser account manager, and the HTTP login server used by the Windows client. Docker images are built for Linux AMD64 and ARM64.
 
 ## Start on the Linux server
 
@@ -14,7 +14,7 @@ cd ZATHROTH
 
 `up.sh` downloads the Docker image for your CPU (x86_64 or arm64) from the repository's public [image release](https://github.com/Lord1Egypt/ZATHROTH/releases/tag/image), loads it, and runs `docker compose up -d`. Once the image is loaded, plain `docker compose up -d` and `docker compose down` work as usual.
 
-The server runs from the folder you cloned. Compose mounts it into both containers, so the game reads `data/`, `data-canary/` and `config.lua.dist` from it, and the SQLite database is created in `database/zathroth.sqlite3` on the first start. The containers run as the folder's owner, so these files stay yours. Edit scripts or `config.lua.dist` in the folder and run `docker compose restart` to apply them. Use `docker compose logs -f game accounts` to watch startup, and `docker compose down` to stop the server. Your accounts and characters stay in `database/`.
+The server runs from the folder you cloned. Compose mounts it into both containers, so the game reads `data/`, `data-otservbr-global/` and `config.lua.dist` from it. On the first start the game downloads the 185 MB map into `data-otservbr-global/world/otservbr.otbm`, checks its SHA-256, and creates the SQLite database in `database/zathroth.sqlite3`. Loading the map takes a few minutes on small ARM boards, and the game server needs about 1.5 GB of RAM. New characters start in Thais. The containers run as the folder's owner, so these files stay yours. Edit scripts or `config.lua.dist` in the folder and run `docker compose restart` to apply them. Use `docker compose logs -f game accounts` to watch startup, and `docker compose down` to stop the server. Your accounts and characters stay in `database/`.
 
 To back up the server, stop it with `docker compose down` and copy the `database/` folder.
 
