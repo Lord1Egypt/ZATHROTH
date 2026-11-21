@@ -36,7 +36,7 @@ How this server is built, deployed and changed. Read it before editing.
 | Start town Thais (first town named Thais, else lowest ID) | `account_manager.cpp`, `account_manager/storage.py` |
 | One-time move of all characters to Thais when the map changes | `data-otservbr-global/scripts/globalevents/zathroth_world_move.lua` (`server_config` key `zathroth_world`) |
 | Zathroth Trader, buys all NPC loot | `data-otservbr-global/npc/zathroth_trader.lua`, placed by `.../globalevents/zathroth_trader_spawn.lua` in 21 depots |
-| `/vipset [player]` god command: golden armor set, VIP sword, axe, spears, bow, wand, rod, and a quiver of VIP arrows and bolts | `data/scripts/talkactions/god/vip_set.lua` |
+| `/vipset [player]` god command: golden armor set, VIP sword, axe, spears, bow, crossbow, wand, rod, and a quiver of VIP arrows and bolts | `data/scripts/talkactions/god/vip_set.lua` |
 | VIP inferno arrows and thunder bolts explode over 9x9 tiles (burst arrows / power bolts with action ID 61530) | `data/scripts/lib/zathroth_vip.lua`, `data/scripts/weapons/scripts/burst_arrow.lua`, `power_bolt.lua` |
 | `/addbulkskills player levels` god command (all skills and magic level) | `data/scripts/talkactions/god/add_bulk_skills.lua` |
 | VIP item bonuses (skills, magic, health, mana, speed, regeneration, protection, critical, leech, damage, light) while worn, rebuilt on every equipment change and at login | table and refresh in `data/scripts/lib/zathroth_vip.lua`, hook `data/scripts/eventcallbacks/player/zathroth_vip_bonuses.lua` |

@@ -18,6 +18,7 @@ local pieces = {
 	{ id = 36661, name = "ZATHROTH VIP axe", attributes = { [ITEM_ATTRIBUTE_ATTACK] = 90, [ITEM_ATTRIBUTE_DEFENSE] = 45 } },
 	{ id = 7367, name = "ZATHROTH VIP spears", count = 100, attributes = { [ITEM_ATTRIBUTE_ATTACK] = 70 } },
 	{ id = 43878, name = "ZATHROTH VIP bow", attributes = { [ITEM_ATTRIBUTE_ATTACK] = 20 } },
+	{ id = 43880, name = "ZATHROTH VIP crossbow", attributes = { [ITEM_ATTRIBUTE_ATTACK] = 22 } },
 	{ id = 43883, name = "ZATHROTH VIP wand" },
 	{ id = 43886, name = "ZATHROTH VIP rod" },
 }
