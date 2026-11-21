@@ -48943,39 +48943,28 @@ hands of its owner. Granted by TibiaRoyal.com"/>
 	</item>
 	<item id="25755" name="RESERVED SPRITE"/>
 	<item id="25756" article="an" name="energized tile"/>
-	<item id="25757" article="a" name="diamond arrow">
+	<item id="25757" article="a" name="god arrow" plural="god arrows">
 		<attribute key="primarytype" value="ammunition"/>
+		<attribute key="description" value="ZATHROTH god ammunition. It never runs out and kills any monster in one shot."/>
+		<attribute key="weaponType" value="ammunition"/>
 		<attribute key="ammotype" value="arrow"/>
-		<attribute key="attack" value="37"/>
-		<attribute key="decayTo" value="0"/>
-		<attribute key="duration" value="3600"/>
+		<attribute key="shootType" value="suddendeath"/>
+		<attribute key="attack" value="100"/>
+		<attribute key="hitchance" value="100"/>
 		<attribute key="maxhitchance" value="100"/>
-		<attribute key="ammotype" value="arrow"/>
-		<attribute key="shootType" value="diamondarrow"/>
-		<attribute key="stopduration" value="0"/>
-		<attribute key="showduration" value="1"/>
-		<attribute key="maxhitchance" value="100"/>
-		<attribute key="duration" value="3600"/>
-		<attribute key="decayTo" value="0"/>
-		<attribute key="attack" value="37"/>
-		<attribute key="weight" value="80"/>
+		<attribute key="weight" value="1"/>
 	</item>
-	<item id="25758" article="a" name="spectral bolt">
+	<item id="25758" article="a" name="god bolt" plural="god bolts">
 		<attribute key="primarytype" value="ammunition"/>
+		<attribute key="description" value="ZATHROTH god ammunition. It never runs out and strikes every monster around the target dead in a lightning storm."/>
 		<attribute key="weaponType" value="ammunition"/>
 		<attribute key="ammotype" value="bolt"/>
-		<attribute key="shootType" value="spectralbolt"/>
-		<attribute key="stopduration" value="0"/>
-		<attribute key="showduration" value="1"/>
+		<attribute key="shootType" value="energyball"/>
+		<attribute key="attack" value="100"/>
+		<attribute key="hitchance" value="100"/>
 		<attribute key="maxhitchance" value="100"/>
-		<attribute key="duration" value="3600"/>
-		<attribute key="attack" value="78"/>
-		<attribute key="weight" value="90"/>
-		<attribute key="script" value="moveevent;weapon">
-			<attribute key="action" value="removecount"/>
-			<attribute key="level" value="150"/>
-			<attribute key="unproperly" value="true"/>
-			<attribute key="weaponType" value="ammo"/>
+		<attribute key="weight" value="1"/>
+		<attribute key="script" value="moveevent">
 			<attribute key="slot" value="ammo"/>
 		</attribute>
 	</item>

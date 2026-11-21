@@ -37,11 +37,7 @@ burstArrow.onUseWeapon = function(player, variant)
 		return false
 	end
 
-	local actionId = zathrothFiredAmmoActionId(player, 3449)
-	if actionId == ZATHROTH_GOD_AMMO_ACTION_ID and player:getGroup():getId() >= GROUP_TYPE_GOD then
-		return zathrothGodShot(player, variant)
-	end
-	if actionId == ZATHROTH_VIP_AMMO_ACTION_ID then
+	if zathrothFiredAmmoActionId(player, 3449) == ZATHROTH_VIP_AMMO_ACTION_ID then
 		local target = Creature(variant:getNumber())
 		if target then
 			target:getPosition():sendMagicEffect(CONST_ME_EXPLOSIONHIT)

@@ -30,12 +30,17 @@ local ammunition = {
 	{ id = 3449, name = "ZATHROTH VIP inferno arrows", count = 100, actionId = ZATHROTH_VIP_AMMO_ACTION_ID, attributes = { [ITEM_ATTRIBUTE_ATTACK] = 80 } },
 	{ id = 3450, name = "ZATHROTH VIP thunder bolts", count = 100, actionId = ZATHROTH_VIP_AMMO_ACTION_ID, attributes = { [ITEM_ATTRIBUTE_ATTACK] = 90 } },
 }
--- Only gods receive god arrows, and only a god's shot kills in one hit.
-local GOD_ARROWS = { id = 3449, name = "ZATHROTH god arrows", count = 100, actionId = ZATHROTH_GOD_AMMO_ACTION_ID }
+-- Gods also get a god quiver with infinite god arrows and god bolts
+-- (data/scripts/weapons/scripts/zathroth_god_ammo.lua). Wear it instead of the
+-- VIP quiver to shoot them; their names come from items.xml.
+local GOD_QUIVER = { id = 39150, name = "ZATHROTH god quiver" }
+local godAmmunition = { ZATHROTH_GOD_ARROW, ZATHROTH_GOD_BOLT }
 
 local function addPiece(container, piece, description)
 	local item = container:addItem(piece.id, piece.count or 1)
 	item:setAttribute(ITEM_ATTRIBUTE_NAME, piece.name)
+	-- Stacks of more than one show the plural name.
+	item:setAttribute(ITEM_ATTRIBUTE_PLURALNAME, piece.name)
 	item:setAttribute(ITEM_ATTRIBUTE_DESCRIPTION, description)
 	for attribute, value in pairs(piece.attributes or {}) do
 		item:setAttribute(attribute, value)
@@ -66,7 +71,10 @@ function vipSet.onSay(player, words, param)
 		addPiece(quiver, piece, description):setActionId(piece.actionId)
 	end
 	if target:getGroup():getId() >= GROUP_TYPE_GOD then
-		addPiece(backpack, GOD_ARROWS, description):setActionId(GOD_ARROWS.actionId)
+		local godQuiver = addPiece(backpack, GOD_QUIVER, description)
+		for _, itemId in ipairs(godAmmunition) do
+			godQuiver:addItem(itemId, 100)
+		end
 	end
 
 	if target:addItemEx(backpack) ~= RETURNVALUE_NOERROR then

@@ -1,9 +1,11 @@
 -- ZATHROTH VIP ammunition carries this action ID. Burst arrows and power
 -- bolts with it explode over a 9x9 area; without it they behave normally.
 ZATHROTH_VIP_AMMO_ACTION_ID = 61530
--- God arrows (burst arrows with this action ID) kill any monster in one hit
--- when a god shoots them.
-ZATHROTH_GOD_AMMO_ACTION_ID = 61531
+-- God arrows and god bolts are their own item types: items.xml 25757 and
+-- 25758, old diamond arrow and spectral bolt IDs not obtainable elsewhere.
+-- Their weapon is data/scripts/weapons/scripts/zathroth_god_ammo.lua.
+ZATHROTH_GOD_ARROW = 25757
+ZATHROTH_GOD_BOLT = 25758
 
 -- 9x9 area centred on the target.
 ZATHROTH_VIP_AMMO_AREA = {
@@ -40,15 +42,9 @@ end
 -- Kills a monster outright. Undefined damage ignores armor, elements and
 -- immunities; twice the maximum health stays clear of integer overflow when
 -- damage buffs multiply it.
-function zathrothGodShot(player, variant)
-	local target = Creature(variant:getNumber())
-	if not target or not target:isMonster() then
-		return false
-	end
-	local damage = -2 * target:getMaxHealth()
-	target:getPosition():sendMagicEffect(CONST_ME_HOLYAREA)
-	doTargetCombatHealth(player, target, COMBAT_UNDEFINEDDAMAGE, damage, damage, CONST_ME_HOLYDAMAGE, ORIGIN_RANGED)
-	return true
+function zathrothGodKill(player, monster)
+	local damage = -2 * monster:getMaxHealth()
+	doTargetCombatHealth(player, monster, COMBAT_UNDEFINEDDAMAGE, damage, damage, CONST_ME_NONE, ORIGIN_RANGED)
 end
 
 -- Inferno arrows and thunder bolts also heal the shooter on every shot.
@@ -211,6 +207,16 @@ ZATHROTH_VIP_BONUSES = {
 			[CONDITION_PARAM_ABSORB_PHYSICALPERCENT] = 4,
 		},
 		speed = 20,
+	},
+	["ZATHROTH god quiver"] = {
+		attributes = allSkills(10, {
+			[CONDITION_PARAM_SKILL_DISTANCE] = 20,
+			[CONDITION_PARAM_SKILL_CRITICAL_HIT_CHANCE] = 1500,
+			[CONDITION_PARAM_STAT_MAXHITPOINTS] = 1000,
+			[CONDITION_PARAM_ABSORB_PHYSICALPERCENT] = 8,
+		}),
+		regeneration = { health = 50, mana = 50 },
+		speed = 50,
 	},
 	["ZATHROTH VIP backpack"] = {
 		attributes = {
