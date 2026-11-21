@@ -186,8 +186,8 @@ class Accounts:
                 """
                 INSERT INTO players (
                     name, account_id, level, vocation, experience, health, healthmax, mana, manamax,
-                    cap, town_id, conditions, sex, looktype, lookhead, lookbody, looklegs, lookfeet
-                ) VALUES (?, ?, 8, ?, 4200, 185, 185, 90, 90, 470, ?, X'', ?, ?, 78, 106, 116, 95)
+                    soul, cap, town_id, conditions, sex, looktype, lookhead, lookbody, looklegs, lookfeet
+                ) VALUES (?, ?, 8, ?, 4200, 185, 185, 90, 90, 100, 470, ?, X'', ?, ?, 78, 106, 116, 95)
                 """,
                 (name, account["id"], vocation, town["id"], sex, 128 if sex else 136),
             )

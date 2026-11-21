@@ -37,14 +37,20 @@ local ammunition = {
 local GOD_QUIVER = { id = 39150, name = "ZATHROTH god quiver" }
 local godAmmunition = { ZATHROTH_GOD_ARROW, ZATHROTH_GOD_BOLT }
 
-local function addPiece(container, piece, description)
-	local item = container:addItem(piece.id, piece.count or 1)
+-- Items get their VIP weight before they enter a container: a container
+-- keeps the weight its items had when they were added, so setting a light
+-- weight afterwards would leave the set counted at the base weights.
+local function createPiece(piece, description)
+	local item = Game.createItem(piece.id, piece.count or 1)
 	item:setAttribute(ITEM_ATTRIBUTE_NAME, piece.name)
 	-- Stacks of more than one show the plural name.
 	item:setAttribute(ITEM_ATTRIBUTE_PLURALNAME, piece.name)
 	item:setAttribute(ITEM_ATTRIBUTE_DESCRIPTION, description)
 	for attribute, value in pairs(piece.attributes or {}) do
 		item:setAttribute(attribute, value)
+	end
+	if piece.actionId then
+		item:setActionId(piece.actionId)
 	end
 	-- The weight is per piece: 1 oz for single items, 0.01 oz for stackables.
 	item:setAttribute(ITEM_ATTRIBUTE_WEIGHT, piece.count and 1 or 100)
@@ -66,17 +72,19 @@ function vipSet.onSay(player, words, param)
 	backpack:setAttribute(ITEM_ATTRIBUTE_NAME, "ZATHROTH VIP backpack")
 	local description = "ZATHROTH VIP set of " .. target:getName() .. "."
 	for _, piece in ipairs(pieces) do
-		addPiece(backpack, piece, description)
+		backpack:addItemEx(createPiece(piece, description))
 	end
-	local quiver = addPiece(backpack, QUIVER, description)
+	local quiver = createPiece(QUIVER, description)
 	for _, piece in ipairs(ammunition) do
-		addPiece(quiver, piece, description):setActionId(piece.actionId)
+		quiver:addItemEx(createPiece(piece, description))
 	end
+	backpack:addItemEx(quiver)
 	if target:getGroup():getId() >= GROUP_TYPE_GOD then
-		local godQuiver = addPiece(backpack, GOD_QUIVER, description)
+		local godQuiver = createPiece(GOD_QUIVER, description)
 		for _, itemId in ipairs(godAmmunition) do
 			godQuiver:addItem(itemId, 100)
 		end
+		backpack:addItemEx(godQuiver)
 	end
 
 	if target:addItemEx(backpack) ~= RETURNVALUE_NOERROR then

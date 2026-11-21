@@ -282,8 +282,8 @@ std::string AccountManager::handleAccount(const std::string &text, const std::st
 			const auto escapedName = db.escapeString(pendingName);
 			const auto created = db.storeQuery(fmt::format(
 				"INSERT INTO `players` (`name`, `account_id`, `level`, `vocation`, `experience`, `health`, `healthmax`, `mana`, `manamax`, "
-				"`cap`, `town_id`, `conditions`, `sex`, `looktype`, `lookhead`, `lookbody`, `looklegs`, `lookfeet`) "
-				"SELECT {0}, {1}, 8, {2}, 4200, 185, 185, 90, 90, 470, {3}, X'', {4}, {5}, 78, 106, 116, 95 "
+				"`soul`, `cap`, `town_id`, `conditions`, `sex`, `looktype`, `lookhead`, `lookbody`, `looklegs`, `lookfeet`) "
+				"SELECT {0}, {1}, 8, {2}, 4200, 185, 185, 90, 90, 100, 470, {3}, X'', {4}, {5}, 78, 106, 116, 95 "
 				"WHERE NOT EXISTS (SELECT 1 FROM `players` WHERE `name` = {0}) "
 				"AND (SELECT count(*) FROM `players` WHERE `account_id` = {1}) < {6} RETURNING `id`",
 				escapedName, accountId, pendingVocation, town->getNumber<uint32_t>("id"), pendingSex,
