@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -89,6 +89,22 @@ jobs:
           IMAGE: ${{ steps.image.outputs.tag }}
         run: docker push "$IMAGE"
 
+      - name: Save the image for the public release
+        env:
+          IMAGE: ${{ steps.image.outputs.tag }}
+          REPOSITORY: ${{ github.repository }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          latest="ghcr.io/${REPOSITORY,,}:latest"
+          docker tag "$IMAGE" "$latest"
+          docker save "$latest" | gzip -1 > "zathroth-$ARCH.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zathroth-${{ matrix.arch }}
+          path: zathroth-${{ matrix.arch }}.tar.gz
+          retention-days: 1
+
   publish:
     runs-on: ubuntu-24.04
     needs: build
@@ -108,3 +124,16 @@ jobs:
             --tag "$image:latest" --tag "$image:$GITHUB_SHA" \
             "$image:$GITHUB_SHA-amd64" "$image:$GITHUB_SHA-arm64"
           docker buildx imagetools inspect "$image:latest"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: zathroth-*
+          merge-multiple: true
+
+      - name: Update the image files on the public release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          gh release upload image zathroth-amd64.tar.gz zathroth-arm64.tar.gz \
+            --repo "$REPOSITORY" --clobber
