@@ -1,14 +1,43 @@
--- Gives an online player the ZATHROTH VIP set: golden pieces with raised
--- armor and defense, nearly weightless, in a golden backpack.
+-- Gives an online player the ZATHROTH VIP set: golden armor pieces with
+-- raised armor and defense, the strongest weapon of each kind with raised
+-- attack, and exploding VIP arrows and bolts, all nearly weightless, in a
+-- golden backpack. Gods ignore weapon level and vocation requirements; other
+-- players still need them. Wand and rod damage comes from the item itself.
 local GOLDEN_BACKPACK = 2871
 
 local pieces = {
-	{ id = 3365, name = "ZATHROTH VIP helmet", attribute = ITEM_ATTRIBUTE_ARMOR, value = 20 },
-	{ id = 3360, name = "ZATHROTH VIP armor", attribute = ITEM_ATTRIBUTE_ARMOR, value = 30 },
-	{ id = 3364, name = "ZATHROTH VIP legs", attribute = ITEM_ATTRIBUTE_ARMOR, value = 20 },
-	{ id = 3555, name = "ZATHROTH VIP boots", attribute = ITEM_ATTRIBUTE_ARMOR, value = 10 },
-	{ id = 3422, name = "ZATHROTH VIP shield", attribute = ITEM_ATTRIBUTE_DEFENSE, value = 60 },
+	{ id = 3365, name = "ZATHROTH VIP helmet", attributes = { [ITEM_ATTRIBUTE_ARMOR] = 20 } },
+	{ id = 3360, name = "ZATHROTH VIP armor", attributes = { [ITEM_ATTRIBUTE_ARMOR] = 30 } },
+	{ id = 3364, name = "ZATHROTH VIP legs", attributes = { [ITEM_ATTRIBUTE_ARMOR] = 20 } },
+	{ id = 3555, name = "ZATHROTH VIP boots", attributes = { [ITEM_ATTRIBUTE_ARMOR] = 10 } },
+	{ id = 3422, name = "ZATHROTH VIP shield", attributes = { [ITEM_ATTRIBUTE_DEFENSE] = 70 } },
+	{ id = 28723, name = "ZATHROTH VIP sword", attributes = { [ITEM_ATTRIBUTE_ATTACK] = 90, [ITEM_ATTRIBUTE_DEFENSE] = 45 } },
+	{ id = 36661, name = "ZATHROTH VIP axe", attributes = { [ITEM_ATTRIBUTE_ATTACK] = 90, [ITEM_ATTRIBUTE_DEFENSE] = 45 } },
+	{ id = 7367, name = "ZATHROTH VIP spears", count = 100, attributes = { [ITEM_ATTRIBUTE_ATTACK] = 70 } },
+	{ id = 43878, name = "ZATHROTH VIP bow", attributes = { [ITEM_ATTRIBUTE_ATTACK] = 20 } },
+	{ id = 43883, name = "ZATHROTH VIP wand" },
+	{ id = 43886, name = "ZATHROTH VIP rod" },
 }
+
+-- Bows and crossbows take ammunition from a quiver in the right hand. Burst
+-- arrows and power bolts with the VIP action ID explode over 9x9 tiles
+-- (data/scripts/weapons/scripts/burst_arrow.lua and power_bolt.lua).
+local QUIVER = { id = 35524, name = "ZATHROTH VIP quiver" }
+local ammunition = {
+	{ id = 3449, name = "ZATHROTH VIP inferno arrows", count = 100, attributes = { [ITEM_ATTRIBUTE_ATTACK] = 60 } },
+	{ id = 3450, name = "ZATHROTH VIP thunder bolts", count = 100, attributes = { [ITEM_ATTRIBUTE_ATTACK] = 70 } },
+}
+
+local function addPiece(container, piece, description)
+	local item = container:addItem(piece.id, piece.count or 1)
+	item:setAttribute(ITEM_ATTRIBUTE_NAME, piece.name)
+	item:setAttribute(ITEM_ATTRIBUTE_DESCRIPTION, description)
+	for attribute, value in pairs(piece.attributes or {}) do
+		item:setAttribute(attribute, value)
+	end
+	item:setAttribute(ITEM_ATTRIBUTE_WEIGHT, 100)
+	return item
+end
 
 local vipSet = TalkAction("/vipset")
 
@@ -25,11 +54,11 @@ function vipSet.onSay(player, words, param)
 	backpack:setAttribute(ITEM_ATTRIBUTE_NAME, "ZATHROTH VIP backpack")
 	local description = "ZATHROTH VIP set of " .. target:getName() .. "."
 	for _, piece in ipairs(pieces) do
-		local item = backpack:addItem(piece.id, 1)
-		item:setAttribute(ITEM_ATTRIBUTE_NAME, piece.name)
-		item:setAttribute(ITEM_ATTRIBUTE_DESCRIPTION, description)
-		item:setAttribute(piece.attribute, piece.value)
-		item:setAttribute(ITEM_ATTRIBUTE_WEIGHT, 100)
+		addPiece(backpack, piece, description)
+	end
+	local quiver = addPiece(backpack, QUIVER, description)
+	for _, piece in ipairs(ammunition) do
+		addPiece(quiver, piece, description):setActionId(ZATHROTH_VIP_AMMO_ACTION_ID)
 	end
 
 	if target:addItemEx(backpack) ~= RETURNVALUE_NOERROR then
@@ -51,5 +80,6 @@ function vipSet.onSay(player, words, param)
 end
 
 vipSet:separator(" ")
+vipSet:setDescription("[Usage]: /vipset [player name], gives the ZATHROTH VIP armor and weapon set")
 vipSet:groupType("god")
 vipSet:register()

@@ -22,5 +22,6 @@ function addCoins.onSay(player, words, param)
 end
 
 addCoins:separator(" ")
+addCoins:setDescription("[Usage]: /addcoins <player name>, <amount>, adds Tibia Coins")
 addCoins:groupType("god")
 addCoins:register()
