@@ -10,6 +10,7 @@
 #include "creatures/players/player.hpp"
 
 #include "account/account.hpp"
+#include "creatures/players/account_manager.hpp"
 #include "config/configmanager.hpp"
 #include "core.hpp"
 #include "creatures/appearance/mounts/mounts.hpp"
@@ -6536,7 +6537,7 @@ void Player::onIdleStatus() {
 
 void Player::onPlacedCreature() {
 	// scripting event - onLogin
-	if (!g_creatureEvents().playerLogin(static_self_cast<Player>())) {
+	if (!isAccountManager() && !g_creatureEvents().playerLogin(static_self_cast<Player>())) {
 		removePlayer(true);
 	}
 

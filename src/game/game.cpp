@@ -23,6 +23,7 @@
 #include "creatures/players/grouping/team_finder.hpp"
 #include "creatures/players/highscore_category.hpp"
 #include "creatures/players/imbuements/imbuements.hpp"
+#include "creatures/players/account_manager.hpp"
 #include "creatures/players/player.hpp"
 #include "creatures/players/components/pvp/expert_pvp.hpp"
 #include "enums/player_wheel.hpp"
@@ -7413,6 +7414,13 @@ void Game::playerSay(uint32_t playerId, uint16_t channelId, SpeakClasses type, c
 		return;
 	}
 
+	// Account Manager answers can be passwords, so they are never spoken aloud.
+	if (const auto accountManager = player->getAccountManager()) {
+		player->resetIdleTime();
+		accountManager->onSay(player, text);
+		return;
+	}
+
 	player->resetLoginProtection();
 	player->resetIdleTime();
 
@@ -11594,16 +11602,21 @@ std::shared_ptr<Player> Game::getDeadPlayer(const std::string &playerName) {
 }
 
 void Game::addPlayer(const std::shared_ptr<Player> &player) {
-	const std::string &lowercase_name = asLowerCaseString(player->getName());
-	mappedPlayerNames[lowercase_name] = player;
-	wildcardTree->insert(lowercase_name);
+	// Several Account Managers share one name, so they are only reachable by ID.
+	if (!player->isAccountManager()) {
+		const std::string &lowercase_name = asLowerCaseString(player->getName());
+		mappedPlayerNames[lowercase_name] = player;
+		wildcardTree->insert(lowercase_name);
+	}
 	players[player->getID()] = player;
 }
 
 void Game::removePlayer(const std::shared_ptr<Player> &player) {
-	const std::string &lowercase_name = asLowerCaseString(player->getName());
-	mappedPlayerNames.erase(lowercase_name);
-	wildcardTree->remove(lowercase_name);
+	if (!player->isAccountManager()) {
+		const std::string &lowercase_name = asLowerCaseString(player->getName());
+		mappedPlayerNames.erase(lowercase_name);
+		wildcardTree->remove(lowercase_name);
+	}
 	players.erase(player->getID());
 	ExpertPvp::refreshAllVisibleSituationMarks();
 }
@@ -12583,7 +12596,9 @@ void Game::updatePlayersOnline() const {
 		std::vector<uint32_t> onlinePlayerIds;
 		onlinePlayerIds.reserve(onlinePlayers.size() + m_deadPlayers.size());
 		for (const auto &player : onlinePlayers | std::views::values) {
-			onlinePlayerIds.emplace_back(player->getGUID());
+			if (!player->isAccountManager()) {
+				onlinePlayerIds.emplace_back(player->getGUID());
+			}
 		}
 		for (const auto &weakPlayer : m_deadPlayers | std::views::values) {
 			if (const auto player = weakPlayer.lock(); player && player->client) {

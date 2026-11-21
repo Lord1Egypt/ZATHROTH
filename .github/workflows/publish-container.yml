@@ -58,8 +58,8 @@ jobs:
         run: |
           docker compose up -d --pull never --wait --wait-timeout 150
           docker compose logs --no-color game > zathroth-startup.log
-          rg -F "Compiled by Mohamed Mounir" zathroth-startup.log
-          rg -F "akim.221992@gmail.com" zathroth-startup.log
+          grep -F "Compiled by Mohamed Mounir" zathroth-startup.log
+          grep -F "akim.221992@gmail.com" zathroth-startup.log
           python3 .github/scripts/zathroth-smoke.py
           docker compose exec -T accounts python3 - <<'PYTHON'
           import os

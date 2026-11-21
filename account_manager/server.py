@@ -63,7 +63,7 @@ def client_events():
 
 
 class AccountServer(ThreadingHTTPServer):
-    def __init__(self, address, accounts, game_host, game_port, public_port):
+    def __init__(self, address, accounts, game_host, game_port):
         super().__init__(address, AccountHandler)
         self.accounts = accounts
         self.world = {
@@ -73,8 +73,6 @@ class AccountServer(ThreadingHTTPServer):
             "anticheatprotection": False, "previewstate": 0,
             "pvptype": 3,  # Retro Open PvP, matching config.lua.dist.
         }
-        host = f"[{game_host}]" if ":" in game_host else game_host
-        self.account_url = f"http://{host}:{public_port}/"
         self.secret = secrets.token_bytes(32)
         self.connections = BoundedSemaphore(12)
         self.hashers = BoundedSemaphore(2)
@@ -314,15 +312,12 @@ class AccountHandler(BaseHTTPRequestHandler):
             if not self.server.allow_auth(self.client_address[0]):
                 self.json_response({"errorCode": 2, "errorMessage": "Too many attempts. Try again shortly."})
                 return
-            if identifier == "1" and password == "1":
-                self.json_response({"errorCode": 2, "errorMessage": f"Open {self.server.account_url} in your browser and sign in with 1 / 1 to create an account."})
-                return
-            with self.server.hashers:
-                account = self.accounts.authenticate(identifier.strip(), password)
-            key, rows = self.accounts.start_game_session(account)
-            if key is None:
-                self.json_response({"errorCode": 2, "errorMessage": f"Create a character at {self.server.account_url} and try again."})
-                return
+            if identifier.strip() == "1" and password == "1":
+                key, account, rows = self.accounts.start_game_session()
+            else:
+                with self.server.hashers:
+                    account = self.accounts.authenticate(identifier.strip(), password)
+                key, account, rows = self.accounts.start_game_session(account)
             device_cookie = payload.get("devicecookie", "")
             lastday = max(0, account["lastday"])
             self.json_response({
@@ -456,7 +451,6 @@ def main():
         ("0.0.0.0", port), accounts,
         os.environ.get("ZATHROTH_SERVER_IP", "192.168.1.104"),
         int(os.environ.get("ZATHROTH_GAME_PORT", "7172")),
-        int(os.environ.get("ZATHROTH_ACCOUNT_PUBLIC_PORT", str(port))),
     )
     with server:
         print(f"ZATHROTH Account Manager and game login listening on port {port}", flush=True)

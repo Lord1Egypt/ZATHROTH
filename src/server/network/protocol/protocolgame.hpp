@@ -115,6 +115,7 @@ public:
 	explicit ProtocolGame(const Connection_ptr &initConnection);
 
 	void login(const std::string &name, uint32_t accnumber, OperatingSystem_t operatingSystem);
+	bool loginAccountManager(uint32_t accountId, OperatingSystem_t operatingSystem);
 	void logout(bool displayEffect, bool forced);
 
 	void AddItem(NetworkMessage &msg, const std::shared_ptr<Item> &item);

@@ -22,6 +22,7 @@ target_sources(
             npcs/npc.cpp
             npcs/npcs.cpp
             npcs/spawns/spawn_npc.cpp
+            players/account_manager.cpp
             players/animus_mastery/animus_mastery.cpp
             players/grouping/familiars.cpp
             players/grouping/groups.cpp

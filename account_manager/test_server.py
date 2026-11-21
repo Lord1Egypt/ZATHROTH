@@ -15,7 +15,7 @@ from urllib.parse import urlencode
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 from server import AccountServer, ROOT
-from storage import Accounts
+from storage import MANAGER_NAME, Accounts
 
 
 class Browser:
@@ -59,7 +59,7 @@ class AccountManagerTest(unittest.TestCase):
         with sqlite3.connect(self.db_path) as db:
             db.executescript((ROOT / "schema.sql").read_text())
         accounts = Accounts(self.db_path, 0, ROOT / "data/XML/vocations.xml")
-        self.server = AccountServer(("127.0.0.1", 0), accounts, "192.168.1.104", 7172, 8088)
+        self.server = AccountServer(("127.0.0.1", 0), accounts, "192.168.1.104", 7172)
         worker = Thread(target=self.server.serve_forever, daemon=True)
         worker.start()
         self.addCleanup(self.server.server_close)
@@ -78,26 +78,50 @@ class AccountManagerTest(unittest.TestCase):
         self.assertEqual(status, 200, body)
         self.assertIn("Account created", body)
 
+    def names(self, game):
+        return [character["name"] for character in game["playdata"]["characters"]]
+
+    def test_shared_account_manager_login(self):
+        self.assertIn("still starting", self.browser.game("1", "1")[1]["errorMessage"])
+        self.game_startup()
+        for attempt in range(2):
+            status, game = self.browser.game("1", "1")
+            self.assertEqual(status, 200)
+            self.assertEqual(self.names(game), [MANAGER_NAME])
+        digest = hashlib.sha256(game["session"]["sessionkey"].encode()).hexdigest()
+        with sqlite3.connect(self.db_path) as db:
+            manager = db.execute(
+                "SELECT a.name, a.password, p.level FROM players p JOIN accounts a ON a.id = p.account_id WHERE p.name = ?",
+                (MANAGER_NAME,),
+            ).fetchall()
+            self.assertEqual(manager, [("1", "", 1)])
+            session = db.execute("SELECT a.name FROM account_sessions s JOIN accounts a ON a.id = s.account_id WHERE s.id = ?", (digest,)).fetchone()
+            self.assertEqual(session, ("1",))
+            # An account made in game has no email; an empty identifier must not reach it.
+            db.execute("UPDATE accounts SET password = ? WHERE name = '1'", (hashlib.sha1(b"Adventure pass").hexdigest(),))
+        self.assertEqual(self.browser.game("", "Adventure pass")[1]["errorCode"], 3)
+        self.assertEqual(self.browser.game(" ", "Adventure pass")[1]["errorCode"], 3)
+
     def test_account_character_and_game_login(self):
         self.assertEqual(self.browser.request("/health")[0], 503)
         self.game_startup()
         self.assertEqual(self.browser.request("/health")[0], 200)
-        self.assertIn("192.168.1.104:8088", self.browser.game("1", "1")[1]["errorMessage"])
         self.register(self.browser, "adventurer", "adventurer@example.test")
-        self.assertIn("Create a character", self.browser.game("adventurer", "Adventure pass")[1]["errorMessage"])
+        self.assertEqual(self.names(self.browser.game("adventurer", "Adventure pass")[1]), [MANAGER_NAME])
         self.assertIn("Character created", self.browser.form("character", name="Arden Fox", sex="0", vocation="9")[1])
         status, game = self.browser.game("ADVENTURER@EXAMPLE.TEST", "Adventure pass")
         self.assertEqual(status, 200)
         self.assertEqual(game["playdata"]["worlds"][0]["externaladdressprotected"], "192.168.1.104")
         self.assertEqual(game["playdata"]["worlds"][0]["externalportprotected"], 7172)
         self.assertEqual(game["playdata"]["worlds"][0]["pvptype"], 3)
+        self.assertEqual(self.names(game), ["Arden Fox", MANAGER_NAME])
         arden = game["playdata"]["characters"][0]
         self.assertEqual((arden["name"], arden["level"], arden["vocation"], arden["outfitid"]), ("Arden Fox", 8, "Monk", 136))
 
         digest = hashlib.sha256(game["session"]["sessionkey"].encode()).hexdigest()
         with sqlite3.connect(self.db_path) as db:
             session = db.execute("SELECT account_id FROM account_sessions WHERE id = ?", (digest,)).fetchone()
-            account_id, town_id, condition_type = db.execute("SELECT account_id, town_id, typeof(conditions) FROM players").fetchone()
+            account_id, town_id, condition_type = db.execute("SELECT account_id, town_id, typeof(conditions) FROM players WHERE name = 'Arden Fox'").fetchone()
             self.assertEqual((session, town_id, condition_type), ((account_id,), 1, "blob"))
             db.execute("INSERT INTO players_online (player_id) VALUES (?)", (arden["characterid"],))
 
@@ -108,7 +132,7 @@ class AccountManagerTest(unittest.TestCase):
         with sqlite3.connect(self.db_path) as db:
             db.execute("DELETE FROM players_online")
         self.assertIn("scheduled for deletion", self.browser.form("delete", character=arden["characterid"])[1])
-        self.assertIn("Create a character", self.browser.game("adventurer", "Adventure pass")[1]["errorMessage"])
+        self.assertEqual(self.names(self.browser.game("adventurer", "Adventure pass")[1]), [MANAGER_NAME])
         self.assertIn("Character restored", self.browser.form("restore", character=arden["characterid"])[1])
 
         old_browser = Browser(self.base)
@@ -148,7 +172,7 @@ class LiveAccountManagerTest(unittest.TestCase):
         self.assertTrue(json.loads(body)["ready"])
         self.assertEqual(browser.request("/")[0], 200)
         self.assertIn("Create an account", browser.form("signin", identifier="1", password="1")[1])
-        self.assertIn("in your browser", browser.game("1", "1")[1]["errorMessage"])
+        self.assertEqual(browser.game("1", "1")[1]["playdata"]["characters"][0]["name"], MANAGER_NAME)
         self.assertIn("playersonline", browser.game_status("cacheinfo")[1])
 
 

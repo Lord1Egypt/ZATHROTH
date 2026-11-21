@@ -47,6 +47,7 @@ class TaskHuntingSlot;
 class Spell;
 class Spectators;
 class Account;
+class AccountManager;
 class RewardChest;
 class Cylinder;
 class Town;
@@ -570,6 +571,12 @@ public:
 	}
 	void switchGhostMode() {
 		ghostMode = !ghostMode;
+	}
+	bool isAccountManager() const {
+		return accountManager != nullptr;
+	}
+	AccountManager* getAccountManager() const {
+		return accountManager.get();
 	}
 	uint32_t getLevel() const {
 		return level;
@@ -1866,6 +1873,7 @@ private:
 	bool inMarket = false;
 	bool wasMounted = false;
 	bool ghostMode = false;
+	std::unique_ptr<AccountManager> accountManager;
 	bool pzLocked = false;
 	int64_t pzLockOnlyUntil = 0;
 	uint64_t pzLockEventId = 0;

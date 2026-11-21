@@ -19,6 +19,10 @@ STAFF_NAMES = {"admin", "administrator", "accountmanager", "cm", "gamemaster", "
 DAY = 86400
 START_VOCATIONS = (1, 2, 3, 4, 9)
 MAX_CHARACTERS = 20
+# The shared 1/1 login opens this character. The game server keeps it still and
+# never saves it; src/creatures/players/account_manager.cpp runs its dialog.
+MANAGER_ACCOUNT = "1"
+MANAGER_NAME = "Account Manager"
 
 
 class AccountError(ValueError):
@@ -105,9 +109,12 @@ class Accounts:
         ).fetchone()
 
     def authenticate(self, identifier, password):
+        if not identifier:
+            raise AccountError("Account or password is incorrect.")
         with self.connection() as db:
+            # Accounts made in game have no email, so a blank email never matches.
             account = db.execute(
-                "SELECT id, name, email, password, lastday FROM accounts WHERE name = ? OR email = ? LIMIT 1",
+                "SELECT id, name, email, password, lastday FROM accounts WHERE name = ? OR (email <> '' AND email = ?) LIMIT 1",
                 (identifier, identifier),
             ).fetchone()
         if not self.passwords.matches(password, account["password"] if account else None):
@@ -218,18 +225,51 @@ class Accounts:
             db.execute("DELETE FROM account_sessions WHERE account_id = ?", (account["id"],))
         return updated
 
-    def start_game_session(self, account):
+    def ensure_manager(self, db):
+        # The reserved account's empty password matches no hash, so only the
+        # 1/1 shortcut in server.py can open it.
+        account = db.execute(
+            "SELECT id, name, email, password, lastday FROM accounts WHERE name = ?", (MANAGER_ACCOUNT,),
+        ).fetchone() or db.execute(
+            """
+            INSERT INTO accounts (name, email, password, creation) VALUES (?, '', '', ?)
+            RETURNING id, name, email, password, lastday
+            """,
+            (MANAGER_ACCOUNT, int(time.time())),
+        ).fetchone()
+        manager = db.execute("SELECT *, 0 AS online FROM players WHERE name = ?", (MANAGER_NAME,)).fetchone()
+        if manager is None:
+            town = self.get_start_town(db)
+            if town is None:
+                raise AccountError("The game server is still starting. Try again shortly.")
+            manager = db.execute(
+                """
+                INSERT INTO players (
+                    name, account_id, level, vocation, health, healthmax, mana, manamax,
+                    cap, town_id, conditions, sex, looktype, lookhead, lookbody, looklegs, lookfeet
+                ) VALUES (?, ?, 1, 0, 150, 150, 0, 0, 400, ?, X'', 1, 128, 78, 106, 116, 95)
+                RETURNING *, 0 AS online
+                """,
+                (MANAGER_NAME, account["id"], town["id"]),
+            ).fetchone()
+        return account, manager
+
+    def start_game_session(self, account=None):
+        """Create a game session; with no account, for the shared 1/1 Account Manager."""
         key = secrets.token_hex(32)
         digest = hashlib.sha256(key.encode()).hexdigest()
         now = int(time.time())
         with self.connection(write=True) as db:
-            self.ensure_current(db, account)
-            characters = [row for row in self.character_rows(db, account["id"]) if row["deletion"] == 0]
-            if not characters:
-                return None, characters
+            manager_account, manager = self.ensure_manager(db)
+            if account is None:
+                account, characters = manager_account, []
+            else:
+                self.ensure_current(db, account)
+                characters = [row for row in self.character_rows(db, account["id"]) if row["deletion"] == 0]
+            characters.append(manager)
             db.execute("DELETE FROM account_sessions WHERE expires <= ?", (now,))
             db.execute(
                 "INSERT INTO account_sessions (id, account_id, expires) VALUES (?, ?, ?)",
                 (digest, account["id"], now + DAY),
             )
-        return key, characters
+        return key, account, characters

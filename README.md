@@ -1,6 +1,6 @@
 # ZATHROTH
 
-ZATHROTH is a Canary-based game server for protocol **15.25**. It runs with SQLite and ships a starter world, a browser account manager, and the HTTP login endpoint used by the Windows client. Docker images are built for Linux AMD64 and ARM64.
+ZATHROTH is a Canary-based game server for protocol **15.25**. It runs with SQLite and ships a starter world, an in-game 1/1 Account Manager, a browser account manager, and the HTTP login server used by the Windows client. Docker images are built for Linux AMD64 and ARM64.
 
 ## Start on the Linux server
 
@@ -18,9 +18,16 @@ The account manager and game share one named Docker volume, `zathroth_world`. SQ
 
 ## Create an account and log in from Windows
 
-1. Open `http://192.168.1.104:8088/` in a browser and sign in with username `1` and password `1`.
-2. Create your player account. The manager signs you in automatically so you can create or manage its characters. The shared login can register accounts only.
-3. Configure OTClient Redemption on Windows for protocol `1525`. Sign in with the new account and select your character. The login service advertises `192.168.1.104:7172` as the game endpoint.
+The game client logs in over HTTP, so configure the client first (below). Then:
+
+1. In the client, log in with account `1` and password `1`. Select the **Account Manager** character.
+2. The Account Manager stands still at the temple and talks to you in the Local Chat channel. Only you can see what you type. Say `account`, then answer its questions to choose a password and an account name.
+3. Once the account exists, the same Account Manager helps you create characters. Say `character`, then pick a name, `male` or `female`, and a vocation.
+4. Log out and log in with your new account. Your characters are listed with an **Account Manager** entry. Use that entry at any time to add characters, `delete` one (deletion happens after 7 days), or change your `password`.
+
+You can do the same in a browser at `http://192.168.1.104:8088/`. Sign in there with `1` / `1` to register an account with an email address.
+
+The `accounts` service is the HTTP login server, the SQLite counterpart of OpenTibiaBR's login-server. It answers `/login` and `/login.php` with the same JSON, and its sessions are checked by the game server. It advertises `192.168.1.104:7172` as the game endpoint.
 
 With OTClient Redemption 4.2, extract its source ZIP and place `otclient_gl_x64.exe` from the Windows OpenGL ZIP beside `init.lua`. Supply the matching assets in `data/things/1525/`. [OTClient 4.2 downloads](https://github.com/opentibiabr/otclient/releases/tag/4.2) · [15.25 asset setup](https://github.com/opentibiabr/otclient/wiki/Tutorial-to-use-OTC-in-Canary-main)
 
@@ -35,6 +42,8 @@ Add this entry to `Servers_init` in `init.lua` with the server list enabled.
 },
 ```
 
+A client that asks for a login URL instead uses `http://192.168.1.104:8088/login.php`.
+
 All three ports use TCP.
 
 | Port | Purpose |
@@ -43,7 +52,7 @@ All three ports use TCP.
 | 7171 | Game server status and protocol login listener |
 | 7172 | Game connection |
 
-Run this configuration on a trusted LAN. HTTP login and account management use plain HTTP, and the registration login is shared.
+Run this configuration on a trusted LAN. HTTP login and account management use plain HTTP, and anyone who can reach the server can use the shared 1/1 login to create accounts.
 
 ## Configure or update
 

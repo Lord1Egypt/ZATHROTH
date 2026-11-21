@@ -10,6 +10,7 @@
 #include "io/iologindata.hpp"
 
 #include "account/account.hpp"
+#include "creatures/players/account_manager.hpp"
 #include "config/configmanager.hpp"
 #include "database/database.hpp"
 #include "io/functions/iologindata_load_player.hpp"
@@ -38,6 +39,13 @@ bool IOLoginData::gameWorldAuthentication(const std::string &accountDescriptor, 
 		if (!account.authenticate(password)) {
 			return false;
 		}
+	}
+
+	// Every authenticated account may open the Account Manager, which is not one of its characters.
+	if (AccountManager::isManagerName(characterName)) {
+		characterName = AccountManager::NAME;
+		accountId = account.getID();
+		return true;
 	}
 
 	if (!g_accountRepository().getCharacterByAccountIdAndName(account.getID(), characterName)) {
@@ -209,6 +217,10 @@ void IOLoginData::loadOnlyDataForOnlinePlayer(const std::shared_ptr<Player> &pla
 }
 
 bool IOLoginData::savePlayer(const std::shared_ptr<Player> &player) {
+	if (player && player->isAccountManager()) {
+		return true;
+	}
+
 	try {
 		bool success = DBTransaction::executeWithinTransaction([player]() {
 			return savePlayerGuard(player);

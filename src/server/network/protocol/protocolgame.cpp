@@ -10,6 +10,7 @@
 #include "server/network/protocol/protocolgame.hpp"
 
 #include "account/account.hpp"
+#include "creatures/players/account_manager.hpp"
 #include "config/configmanager.hpp"
 #include "core.hpp"
 #include "creatures/appearance/mounts/mounts.hpp"
@@ -940,6 +941,13 @@ void ProtocolGame::login(const std::string &name, uint32_t accountId, OperatingS
 
 	g_logger().debug("Player logging in in version '{}' and oldProtocol '{}'", getVersion(), oldProtocol);
 
+	if (AccountManager::isManagerName(name)) {
+		if (loginAccountManager(accountId, operatingSystem)) {
+			OutputMessagePool::getInstance().addProtocolToAutosend(shared_from_this());
+		}
+		return;
+	}
+
 	// dispatcher thread
 	std::shared_ptr<Player> foundPlayer = g_game().getPlayerByName(name);
 	if (!foundPlayer) {
@@ -1101,6 +1109,48 @@ void ProtocolGame::login(const std::string &name, uint32_t accountId, OperatingS
 	sendBosstiaryCooldownTimer();
 }
 
+// Each Account Manager login gets its own temporary copy of the template
+// character. It is never saved, is invisible to others and stands still.
+bool ProtocolGame::loginAccountManager(uint32_t accountId, OperatingSystem_t operatingSystem) {
+	const std::string name(AccountManager::NAME);
+	player = std::make_shared<Player>(getThis());
+	player->setName(name);
+	player->id = AccountManager::nextCreatureId();
+
+	if (!IOLoginDataLoad::preLoadPlayer(player, name) || !IOLoginData::loadPlayerById(player, player->getGUID(), false)) {
+		disconnectClient("The Account Manager is unavailable. Please try again later.");
+		return false;
+	}
+
+	if (g_game().getGameState() == GAME_STATE_CLOSING || g_game().getGameState() == GAME_STATE_CLOSED) {
+		disconnectClient("Server is currently closed.\nPlease try again later.");
+		return false;
+	}
+
+	BanInfo banInfo;
+	if (IOBan::isAccountBanned(accountId, banInfo)) {
+		disconnectClient("Your account has been banned.");
+		return false;
+	}
+
+	player->accountManager = std::make_unique<AccountManager>(accountId, accountId == player->getAccountId());
+	player->setOperatingSystem(operatingSystem);
+	if (!player->isInGhostMode()) {
+		player->switchGhostMode();
+	}
+
+	if (!g_game().placeCreature(player, player->getTemplePosition(), false, true)) {
+		disconnectClient("Temple position is wrong. Please, contact the administrator.");
+		g_logger().warn("Account Manager temple position is wrong");
+		return false;
+	}
+
+	player->lastIP = player->getIP();
+	acceptPackets = true;
+	player->getAccountManager()->greet(player);
+	return true;
+}
+
 void ProtocolGame::connect(const std::string &playerName, OperatingSystem_t operatingSystem) {
 	eventConnect = 0;
 
@@ -1171,7 +1221,7 @@ void ProtocolGame::logout(bool displayEffect, bool forced) {
 		}
 	}
 
-	if (removePlayer && !g_creatureEvents().playerLogout(player)) {
+	if (removePlayer && !player->isAccountManager() && !g_creatureEvents().playerLogout(player)) {
 		return;
 	}
 
@@ -1688,6 +1738,27 @@ void ProtocolGame::parsePacketFromDispatcher(NetworkMessage &msg, uint8_t recvby
 	}
 
 	if (!player || player->isRemoved() || player->getHealth() <= 0) {
+		return;
+	}
+
+	if (player->isAccountManager()) {
+		switch (recvbyte) {
+			case 0x14:
+				logout(false, false);
+				break;
+			case 0x1D:
+				g_game().playerReceivePingBack(player->getID());
+				break;
+			case 0x1E:
+				g_game().playerReceivePing(player->getID());
+				break;
+			case 0x96:
+				parseSay(msg);
+				break;
+			default:
+				sendCancelWalk();
+				break;
+		}
 		return;
 	}
 
