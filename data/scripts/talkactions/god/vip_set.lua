@@ -1,9 +1,12 @@
 -- Gives an online player the ZATHROTH VIP set: golden armor pieces with
 -- raised armor and defense, the strongest weapon of each kind with raised
 -- attack, and exploding VIP arrows and bolts, all nearly weightless, in a
--- golden backpack. Gods ignore weapon level and vocation requirements; other
--- players still need them. Wand and rod damage comes from the item itself.
-local GOLDEN_BACKPACK = 2871
+-- 100-slot VIP backpack. Worn VIP items grant the bonuses in
+-- data/scripts/lib/zathroth_vip.lua. Gods ignore weapon level and vocation
+-- requirements; other players still need them. Wand and rod damage comes
+-- from the item itself. The changing backpack is not obtainable elsewhere;
+-- items.xml gives it 100 slots.
+local VIP_BACKPACK = 37536
 
 local pieces = {
 	{ id = 3365, name = "ZATHROTH VIP helmet", attributes = { [ITEM_ATTRIBUTE_ARMOR] = 20 } },
@@ -24,9 +27,11 @@ local pieces = {
 -- (data/scripts/weapons/scripts/burst_arrow.lua and power_bolt.lua).
 local QUIVER = { id = 35524, name = "ZATHROTH VIP quiver" }
 local ammunition = {
-	{ id = 3449, name = "ZATHROTH VIP inferno arrows", count = 100, attributes = { [ITEM_ATTRIBUTE_ATTACK] = 60 } },
-	{ id = 3450, name = "ZATHROTH VIP thunder bolts", count = 100, attributes = { [ITEM_ATTRIBUTE_ATTACK] = 70 } },
+	{ id = 3449, name = "ZATHROTH VIP inferno arrows", count = 100, actionId = ZATHROTH_VIP_AMMO_ACTION_ID, attributes = { [ITEM_ATTRIBUTE_ATTACK] = 80 } },
+	{ id = 3450, name = "ZATHROTH VIP thunder bolts", count = 100, actionId = ZATHROTH_VIP_AMMO_ACTION_ID, attributes = { [ITEM_ATTRIBUTE_ATTACK] = 90 } },
 }
+-- Only gods receive god arrows, and only a god's shot kills in one hit.
+local GOD_ARROWS = { id = 3449, name = "ZATHROTH god arrows", count = 100, actionId = ZATHROTH_GOD_AMMO_ACTION_ID }
 
 local function addPiece(container, piece, description)
 	local item = container:addItem(piece.id, piece.count or 1)
@@ -50,7 +55,7 @@ function vipSet.onSay(player, words, param)
 		return true
 	end
 
-	local backpack = Game.createItem(GOLDEN_BACKPACK, 1)
+	local backpack = Game.createItem(VIP_BACKPACK, 1)
 	backpack:setAttribute(ITEM_ATTRIBUTE_NAME, "ZATHROTH VIP backpack")
 	local description = "ZATHROTH VIP set of " .. target:getName() .. "."
 	for _, piece in ipairs(pieces) do
@@ -58,7 +63,10 @@ function vipSet.onSay(player, words, param)
 	end
 	local quiver = addPiece(backpack, QUIVER, description)
 	for _, piece in ipairs(ammunition) do
-		addPiece(quiver, piece, description):setActionId(ZATHROTH_VIP_AMMO_ACTION_ID)
+		addPiece(quiver, piece, description):setActionId(piece.actionId)
+	end
+	if target:getGroup():getId() >= GROUP_TYPE_GOD then
+		addPiece(backpack, GOD_ARROWS, description):setActionId(GOD_ARROWS.actionId)
 	end
 
 	if target:addItemEx(backpack) ~= RETURNVALUE_NOERROR then

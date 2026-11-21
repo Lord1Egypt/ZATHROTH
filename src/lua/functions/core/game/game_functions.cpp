@@ -39,6 +39,10 @@ void GameFunctions::init(lua_State* L) {
 	Lua::registerMethod(L, "Game", "getSpectators", GameFunctions::luaGameGetSpectators);
 
 	Lua::registerMethod(L, "Game", "getBoostedCreature", GameFunctions::luaGameGetBoostedCreature);
+	Lua::registerMethod(L, "Game", "setAttackSpeedRate", GameFunctions::luaGameSetAttackSpeedRate);
+	Lua::registerMethod(L, "Game", "getAttackSpeedRate", GameFunctions::luaGameGetAttackSpeedRate);
+	Lua::registerMethod(L, "Game", "setSpawnRate", GameFunctions::luaGameSetSpawnRate);
+	Lua::registerMethod(L, "Game", "getSpawnRate", GameFunctions::luaGameGetSpawnRate);
 	Lua::registerMethod(L, "Game", "getBestiaryList", GameFunctions::luaGameGetBestiaryList);
 
 	Lua::registerMethod(L, "Game", "getPlayers", GameFunctions::luaGameGetPlayers);
@@ -230,6 +234,30 @@ int GameFunctions::luaGameGetSpectators(lua_State* L) {
 int GameFunctions::luaGameGetBoostedCreature(lua_State* L) {
 	// Game.getBoostedCreature()
 	Lua::pushString(L, g_game().getBoostedMonsterName());
+	return 1;
+}
+
+int GameFunctions::luaGameSetAttackSpeedRate(lua_State* L) {
+	// Game.setAttackSpeedRate(rate)
+	g_game().setAttackSpeedRate(Lua::getNumber<uint32_t>(L, 1));
+	return 0;
+}
+
+int GameFunctions::luaGameGetAttackSpeedRate(lua_State* L) {
+	// Game.getAttackSpeedRate()
+	lua_pushnumber(L, g_game().getAttackSpeedRate());
+	return 1;
+}
+
+int GameFunctions::luaGameSetSpawnRate(lua_State* L) {
+	// Game.setSpawnRate(rate)
+	g_game().setSpawnRate(Lua::getNumber<uint32_t>(L, 1));
+	return 0;
+}
+
+int GameFunctions::luaGameGetSpawnRate(lua_State* L) {
+	// Game.getSpawnRate()
+	lua_pushnumber(L, g_game().getSpawnRate());
 	return 1;
 }
 

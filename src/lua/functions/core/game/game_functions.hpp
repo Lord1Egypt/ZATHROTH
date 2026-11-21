@@ -21,6 +21,10 @@ private:
 	static int luaGameGetSpectators(lua_State* L);
 
 	static int luaGameGetBoostedCreature(lua_State* L);
+	static int luaGameSetAttackSpeedRate(lua_State* L);
+	static int luaGameGetAttackSpeedRate(lua_State* L);
+	static int luaGameSetSpawnRate(lua_State* L);
+	static int luaGameGetSpawnRate(lua_State* L);
 	static int luaGameGetBestiaryList(lua_State* L);
 
 	static int luaGameGetPlayers(lua_State* L);

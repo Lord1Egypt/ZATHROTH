@@ -69,7 +69,8 @@ function getLootRandom(modifier)
 	local baseRateLoot = configManager.getNumber(configKeys.RATE_LOOT)
 	local scheduleRate = SCHEDULE_LOOT_RATE
 
-	local multi = math.max(1, baseRateLoot * scheduleRate * (modifier or 1))
+	-- ZATHROTH_LOOT_RATE is set by /lootrate (data/scripts/lib/zathroth_rates.lua).
+	local multi = math.max(1, baseRateLoot * scheduleRate * (modifier or 1) * (ZATHROTH_LOOT_RATE or 1))
 
 	local randomValue = math.random(0, MAX_LOOTCHANCE)
 	return randomValue * 100 / multi

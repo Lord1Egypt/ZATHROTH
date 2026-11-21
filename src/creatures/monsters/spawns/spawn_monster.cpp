@@ -26,6 +26,11 @@
 static constexpr int32_t MONSTER_MINSPAWN_INTERVAL = 1000; // 1 second
 static constexpr int32_t MONSTER_MAXSPAWN_INTERVAL = 86400000; // 1 day
 
+// /spawn shortens respawn times at runtime, never below one second.
+static uint32_t scaledSpawnMonsterInterval(uint32_t interval) {
+	return std::max<uint32_t>(MONSTER_MINSPAWN_INTERVAL, interval / g_game().getSpawnRate());
+}
+
 bool SpawnsMonster::loadFromXML(const std::string &filemonstername) {
 	if (isLoaded()) {
 		return true;
@@ -166,7 +171,7 @@ void SpawnMonster::startSpawnMonsterCheck() {
 	if (checkSpawnMonsterEvent == 0) {
 		const std::weak_ptr<SpawnMonster> weakSelf = static_self_cast<SpawnMonster>();
 		checkSpawnMonsterEvent = g_dispatcher().scheduleEvent(
-			getInterval(),
+			scaledSpawnMonsterInterval(getInterval()),
 			[weakSelf] {
 				if (const auto self = weakSelf.lock()) {
 					self->checkSpawnMonster();
@@ -289,7 +294,7 @@ void SpawnMonster::checkSpawnMonster() {
 			sb.lastSpawn = OTSYS_TIME();
 			continue;
 		}
-		if (OTSYS_TIME() < sb.lastSpawn + sb.interval) {
+		if (OTSYS_TIME() < sb.lastSpawn + scaledSpawnMonsterInterval(sb.interval)) {
 			continue;
 		}
 
@@ -303,7 +308,7 @@ void SpawnMonster::checkSpawnMonster() {
 	if (spawnedMonsterMap.size() < spawnMonsterMap.size()) {
 		const std::weak_ptr<SpawnMonster> weakSelf = static_self_cast<SpawnMonster>();
 		checkSpawnMonsterEvent = g_dispatcher().scheduleEvent(
-			getInterval(),
+			scaledSpawnMonsterInterval(getInterval()),
 			[weakSelf] {
 				if (const auto self = weakSelf.lock()) {
 					self->checkSpawnMonster();

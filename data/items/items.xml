@@ -70360,8 +70360,8 @@ Granted by TibiaGoals.com"/>
 	</item>
 	<item id="37536" article="a" name="changing backpack">
 		<attribute key="primarytype" value="containers"/>
-		<attribute key="description" value="It changes its appearance in the course of years, just like Tibia"/>
-		<attribute key="containersize" value="20"/>
+		<attribute key="description" value="The ZATHROTH VIP backpack. It holds 100 items."/>
+		<attribute key="containersize" value="100"/>
 		<attribute key="weight" value="1500"/>
 		<attribute key="imbuementslot" value="1">
 			<attribute key="increase capacity" value="3"/>

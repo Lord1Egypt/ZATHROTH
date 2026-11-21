@@ -9,6 +9,11 @@ function createMonster.onSay(player, words, param)
 		return true
 	end
 
+	-- ZATHROTH: "/spawn <number>" sets the server-wide spawn rate.
+	if param:match("^%s*%d+%s*$") then
+		return zathrothRateCommand(player, "spawn", param)
+	end
+
 	local spawn = Spawn()
 	local parameter = param:split(",")
 	local config = {
@@ -27,5 +32,6 @@ function createMonster.onSay(player, words, param)
 end
 
 createMonster:separator(" ")
+createMonster:setDescription("[Usage]: /spawn <multiplier> sets the monster spawn rate for the whole server; /spawn <monster>, [seconds] creates a spawn here")
 createMonster:groupType("god")
 createMonster:register()

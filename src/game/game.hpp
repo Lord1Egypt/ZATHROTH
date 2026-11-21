@@ -469,6 +469,20 @@ public:
 		return boostedCreature;
 	}
 
+	// Server-wide multipliers set at runtime by god commands; 1 is normal.
+	void setAttackSpeedRate(uint32_t rate) {
+		attackSpeedRate = std::max<uint32_t>(1, rate);
+	}
+	uint32_t getAttackSpeedRate() const {
+		return attackSpeedRate;
+	}
+	void setSpawnRate(uint32_t rate) {
+		spawnRate = std::max<uint32_t>(1, rate);
+	}
+	uint32_t getSpawnRate() const {
+		return spawnRate;
+	}
+
 	bool canThrowObjectTo(const Position &fromPos, const Position &toPos, SightLines_t lineOfSight = SightLine_CheckSightLine, int32_t rangex = MAP_MAX_CLIENT_VIEW_PORT_X, int32_t rangey = MAP_MAX_CLIENT_VIEW_PORT_Y);
 	bool isSightClear(const Position &fromPos, const Position &toPos, bool sameFloor);
 
@@ -875,6 +889,8 @@ private:
 
 	std::map<uint16_t, std::string> BestiaryList;
 	std::string boostedCreature;
+	uint32_t attackSpeedRate = 1;
+	uint32_t spawnRate = 1;
 
 	std::vector<std::shared_ptr<Charm>> CharmList;
 

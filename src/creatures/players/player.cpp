@@ -7345,7 +7345,8 @@ bool Player::isPromoted() const {
 }
 
 uint32_t Player::getAttackSpeed() const {
-	return vocation->getAttackSpeed();
+	// The scheduler cannot run attacks faster than SCHEDULER_MINTICKS.
+	return std::max<uint32_t>(SCHEDULER_MINTICKS, vocation->getAttackSpeed() / g_game().getAttackSpeedRate());
 }
 
 double Player::getLostPercent() const {

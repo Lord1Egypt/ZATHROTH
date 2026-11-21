@@ -39,6 +39,11 @@ How this server is built, deployed and changed. Read it before editing.
 | `/vipset [player]` god command: golden armor set, VIP sword, axe, spears, bow, wand, rod, and a quiver of VIP arrows and bolts | `data/scripts/talkactions/god/vip_set.lua` |
 | VIP inferno arrows and thunder bolts explode over 9x9 tiles (burst arrows / power bolts with action ID 61530) | `data/scripts/lib/zathroth_vip.lua`, `data/scripts/weapons/scripts/burst_arrow.lua`, `power_bolt.lua` |
 | `/addbulkskills player levels` god command (all skills and magic level) | `data/scripts/talkactions/god/add_bulk_skills.lua` |
+| VIP item bonuses (skills, magic, health, mana, speed, regeneration, protection, critical, leech, damage, light) while worn, rebuilt on every equipment change and at login | table and refresh in `data/scripts/lib/zathroth_vip.lua`, hook `data/scripts/eventcallbacks/player/zathroth_vip_bonuses.lua` |
+| 100-slot VIP backpack (changing backpack, ID 37536, not obtainable elsewhere) | `containersize` in `data/items/items.xml` |
+| God arrows (burst arrows with action ID 61531) kill any monster, including the Training Machine, in one god shot | `zathrothGodShot` in `zathroth_vip.lua`, `burst_arrow.lua` |
+| `/setatkspeed N`, `/lootrate N`, `/spawn N` server-wide multipliers, saved in the KV store (`zathroth-rates`) and restored at startup | `data/scripts/lib/zathroth_rates.lua`, `data/scripts/globalevents/zathroth_rates.lua`, `talkactions/god/server_rates.lua`, `create_spawn.lua`; C++ `Game::setAttackSpeedRate`/`setSpawnRate` used by `Player::getAttackSpeed` and `spawn_monster.cpp`; loot in `getLootRandom` (`data/libs/functions/functions.lua`) |
+| Gods may attack players | `cannotattackplayer="0"` for group 6 in `data/XML/groups.xml` |
 | `/addcoins player, amount` god command | `data/scripts/talkactions/god/add_coins.lua` |
 | Forge creation skips maps without forgeable monsters | `Game::createFiendishMonsters` / `createInfluencedMonsters` in `src/game/game.cpp` |
 
@@ -51,6 +56,9 @@ Existing god commands worth knowing: `/addskill player, level|magic|club|sword|a
 - Events and raids: `data-otservbr-global/raids/`, `data-otservbr-global/scripts/globalevents/`, and the event calendar in `data/json/eventscheduler/` (double XP, loot and similar rates).
 - Gods have `notgainexperience`, `notgainmana` and `notgainskill`: `/addskill` level and magic do nothing on a god. Set levels directly (`player:setSkillLevel`, `player:setMagicLevel`) as `/addbulkskills` does; skill-try amounts above 2^32 are also lost in the skill-gain event.
 - Bows and crossbows fire the first quiver item (right hand) of their ammunition type that the player's level allows; the ammo slot is not used. Check that item, not the ammo slot, when a weapon script needs the ammunition.
+- VIP bonuses are keyed by the item's VIP name (only gods can name items). To add a VIP item, add a `ZATHROTH_VIP_BONUSES` entry and make sure the base item has an equip move event in `items.xml`, or the inventory callback never fires for it.
+- A wearable container must have the backpack slot in the client data; some fansite backpacks (war backpack 21445) cannot be worn. Test with `player:addItemEx(item, false, CONST_SLOT_BACKPACK)` (17 means cannot be dressed).
+- Attack speed cannot go below the scheduler's 50 ms tick, so with a 2 s vocation attack speed the effective maximum is 40x.
 - `!commands` lists every talkaction the player's group can use; give new commands a `setDescription`.
 - Items: new item IDs need client sprites. Custom gear uses existing IDs with per-item attributes (`ITEM_ATTRIBUTE_NAME`, `DESCRIPTION`, `ARMOR`, `ATTACK`, `DEFENSE`, `WEIGHT`, tier), as `/vipset` does.
 - Database migrations in `data-otservbr-global/migrations/` stop at 59, the SQLite baseline; new SQLite schema changes go in migrations numbered 60 and up and must be valid SQLite.

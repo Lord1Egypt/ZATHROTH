@@ -14,15 +14,21 @@ combat:setParameter(COMBAT_PARAM_IMPACTSOUND, SOUND_EFFECT_TYPE_BURST_ARROW_EFFE
 combat:setParameter(COMBAT_PARAM_CASTSOUND, SOUND_EFFECT_TYPE_DIST_ATK_BOW)
 combat:setArea(area)
 
--- ZATHROTH VIP arrows: an inferno of fire over 9x9 tiles.
+-- ZATHROTH VIP arrows: an inferno of fire over 9x9 tiles that leaves every
+-- target burning.
+local burning = Condition(CONDITION_FIRE)
+burning:setParameter(CONDITION_PARAM_DELAYED, true)
+burning:addDamage(10, 2000, -150)
+
 local vipCombat = Combat()
 vipCombat:setParameter(COMBAT_PARAM_TYPE, COMBAT_FIREDAMAGE)
 vipCombat:setParameter(COMBAT_PARAM_EFFECT, CONST_ME_FIREAREA)
 vipCombat:setParameter(COMBAT_PARAM_DISTANCEEFFECT, CONST_ANI_FIRE)
-vipCombat:setFormula(COMBAT_FORMULA_SKILL, 0, 0, 1.5, 0)
+vipCombat:setFormula(COMBAT_FORMULA_SKILL, 0, 0, 1.8, 0)
 vipCombat:setParameter(COMBAT_PARAM_IMPACTSOUND, SOUND_EFFECT_TYPE_BURST_ARROW_EFFECT)
 vipCombat:setParameter(COMBAT_PARAM_CASTSOUND, SOUND_EFFECT_TYPE_DIST_ATK_BOW)
 vipCombat:setArea(createCombatArea(ZATHROTH_VIP_AMMO_AREA))
+vipCombat:addCondition(burning)
 
 local burstArrow = Weapon(WEAPON_AMMO)
 
@@ -31,11 +37,16 @@ burstArrow.onUseWeapon = function(player, variant)
 		return false
 	end
 
-	if isZathrothVipAmmo(player, 3449) then
+	local actionId = zathrothFiredAmmoActionId(player, 3449)
+	if actionId == ZATHROTH_GOD_AMMO_ACTION_ID and player:getGroup():getId() >= GROUP_TYPE_GOD then
+		return zathrothGodShot(player, variant)
+	end
+	if actionId == ZATHROTH_VIP_AMMO_ACTION_ID then
 		local target = Creature(variant:getNumber())
 		if target then
 			target:getPosition():sendMagicEffect(CONST_ME_EXPLOSIONHIT)
 		end
+		zathrothVipAmmoHeal(player)
 		return vipCombat:execute(player, variant)
 	end
 	return combat:execute(player, variant)
