@@ -9,10 +9,10 @@ Docker Engine with the Compose plugin and `curl` are required. The default LAN a
 ```sh
 git clone https://github.com/Lord1Egypt/ZATHROTH.git
 cd ZATHROTH
-./start.sh
+./up.sh
 ```
 
-`start.sh` downloads the Docker image for your CPU (x86_64 or arm64) from the repository's public [image release](https://github.com/Lord1Egypt/ZATHROTH/releases/tag/image), loads it, and runs `docker compose up -d`. Once the image is loaded, plain `docker compose up -d` and `docker compose down` work as usual.
+`up.sh` downloads the Docker image for your CPU (x86_64 or arm64) from the repository's public [image release](https://github.com/Lord1Egypt/ZATHROTH/releases/tag/image), loads it, and runs `docker compose up -d`. Once the image is loaded, plain `docker compose up -d` and `docker compose down` work as usual.
 
 The server runs from the folder you cloned. Compose mounts it into both containers, so the game reads `data/`, `data-canary/` and `config.lua.dist` from it, and the SQLite database is created in `database/zathroth.sqlite3` on the first start. The containers run as the folder's owner, so these files stay yours. Edit scripts or `config.lua.dist` in the folder and run `docker compose restart` to apply them. Use `docker compose logs -f game accounts` to watch startup, and `docker compose down` to stop the server. Your accounts and characters stay in `database/`.
 
@@ -68,7 +68,7 @@ ZATHROTH_GAME_PORT=7172
 ZATHROTH_ACCOUNT_PORT=8088
 ```
 
-Run `git pull` and `./start.sh` to update. Every push to `main` rebuilds and tests both architectures, then refreshes the image release. Docker picks the image architecture automatically. To build from source on the host, run `docker build -t zathroth:local .` followed by `ZATHROTH_IMAGE=zathroth:local docker compose up -d`.
+Run `git pull` and `./up.sh` to update. Every push to `main` rebuilds and tests both architectures, then refreshes the image release. Docker picks the image architecture automatically. To build from source on the host, run `docker build -t zathroth:local .` followed by `ZATHROTH_IMAGE=zathroth:local docker compose up -d`.
 
 ## Source and contact
 
