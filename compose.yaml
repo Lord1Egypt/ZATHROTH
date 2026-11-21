@@ -4,8 +4,10 @@ x-runtime: &runtime
   image: "${ZATHROTH_IMAGE:-ghcr.io/lord1egypt/zathroth:latest}"
   restart: unless-stopped
   init: true
+  # The server runs from this folder: it reads data/, data-canary/ and
+  # config.lua.dist here, and keeps the SQLite database in ./database/.
   volumes:
-    - world:/var/lib/zathroth
+    - .:/opt/zathroth
 
 x-bind-ip: &bind-ip "${ZATHROTH_BIND_IP:-${ZATHROTH_SERVER_IP:-192.168.1.104}}"
 x-network-config: &network-config
@@ -44,7 +46,7 @@ services:
 
   accounts:
     <<: *runtime
-    entrypoint: ["python3", "account_manager/server.py"]
+    command: ["accounts"]
     environment:
       <<: *network-config
     ports:
@@ -67,6 +69,3 @@ services:
       interval: 5s
       timeout: 3s
       retries: 6
-
-volumes:
-  world:

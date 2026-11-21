@@ -14,7 +14,9 @@ docker compose up -d
 docker compose ps
 ```
 
-The account manager and game share one named Docker volume, `zathroth_world`. SQLite is initialized on the first startup. Use `docker compose logs -f game accounts` to watch startup and `docker compose down` to stop the server while retaining the database.
+The server runs from the folder you cloned. Compose mounts it into both containers, so the game reads `data/`, `data-canary/` and `config.lua.dist` from it, and the SQLite database is created in `database/zathroth.sqlite3` on the first start. The containers run as the folder's owner, so these files stay yours. Edit scripts or `config.lua.dist` in the folder and run `docker compose restart` to apply them. Use `docker compose logs -f game accounts` to watch startup, and `docker compose down` to stop the server. Your accounts and characters stay in `database/`.
+
+To back up the server, stop it with `docker compose down` and copy the `database/` folder.
 
 ## Create an account and log in from Windows
 

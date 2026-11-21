@@ -57,7 +57,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libargon2-1 libatomic1 libgomp1 libstdc++6 python3 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --user-group --uid 10001 --no-create-home zathroth \
-    && install -d -o zathroth -g zathroth /opt/zathroth /var/lib/zathroth
+    && install -d -o zathroth -g zathroth /opt/zathroth
 
 WORKDIR /opt/zathroth
 COPY --from=build /src/build/linux-release/bin/canary /usr/local/bin/zathroth
@@ -67,8 +67,9 @@ COPY data-canary ./data-canary
 COPY account_manager ./account_manager
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/zathroth-start
 
-USER zathroth
-ENV ZATHROTH_DB_PATH=/var/lib/zathroth/zathroth.sqlite3 \
+# The entrypoint starts as root only to drop to the owner of /opt/zathroth.
+ENV ZATHROTH_DB_PATH=/opt/zathroth/database/zathroth.sqlite3 \
+    PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 EXPOSE 7171/tcp 7172/tcp 8088/tcp
 ENTRYPOINT ["/usr/local/bin/zathroth-start"]

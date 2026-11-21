@@ -38,7 +38,13 @@ def pack_string(value):
 class GameClient:
     """A minimal 15.25 game client: session login, chat, and server text messages."""
 
+    # The server blocks an IP for 3 s after more than 5 connections within
+    # 5 s when two arrive within 500 ms, so connect at a client-like pace.
+    last_connect = 0.0
+
     def __init__(self, session, character):
+        time.sleep(max(0.0, GameClient.last_connect + 0.6 - time.monotonic()))
+        GameClient.last_connect = time.monotonic()
         self.sock = socket.create_connection((HOST, 7172), timeout=10)
         self.key = struct.unpack("<IIII", os.urandom(16))
         self.sequence = 0

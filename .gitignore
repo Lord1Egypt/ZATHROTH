@@ -426,3 +426,7 @@ canary-debug
 *.sqlite3-wal
 *.sqlite3-shm
 *.sqlite3-journal
+
+# Runtime data written by Docker Compose
+database/*
+!database/.gitkeep
