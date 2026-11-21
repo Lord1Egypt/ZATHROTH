@@ -1,5 +1,7 @@
 -- Buys every item that any NPC on this map buys, at the best price any of
--- them pays. The list was generated from the shop tables in this folder.
+-- them pays, but never above the lowest price an NPC sells it for, so
+-- buying and reselling cannot make gold. Generated from the shop tables in
+-- this folder.
 local internalNpcName = "Zathroth Trader"
 local npcType = Game.createNpcType(internalNpcName)
 local npcConfig = {}
@@ -763,7 +765,7 @@ npcConfig.shop = {
 	{ itemName = "incantation notes", clientId = 18929, sell = 90 },
 	{ itemName = "infernal heart", clientId = 34139, sell = 2100 },
 	{ itemName = "infernal robe", clientId = 34146, sell = 1200 },
-	{ itemName = "inkwell", clientId = 3509, sell = 15 },
+	{ itemName = "inkwell", clientId = 3509, sell = 10 },
 	{ itemName = "instable proto matter", clientId = 23516, sell = 300 },
 	{ itemName = "iron hammer", clientId = 3310, sell = 9 },
 	{ itemName = "iron helmet", clientId = 3353, sell = 150 },
