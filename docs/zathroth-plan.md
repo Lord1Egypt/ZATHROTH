@@ -7,11 +7,12 @@ step starts only when the one before it is done and verified.
 
 Status (2026-11-22): host name `zathroth.servegame.com` is kept current by the
 No-IP updater (systemd service `noip-duc` on the phone) and resolves to the
-phone's public address. The phone's `.env` sets `ZATHROTH_SERVER_IP` to the
-host name and `ZATHROTH_LAN_IP` to the LAN address (home-network clients get
-the LAN address, everyone else the host name). Still to verify from outside
-the home network: ports 8088, 7171 and 7172 (open `http://zathroth.servegame.com:8088/`
-on mobile data, then log in with the client).
+phone's public address. Verified from outside the home network on 2026-11-22:
+TCP 8088, 7171 and 7172 connect and `http://zathroth.servegame.com:8088/health`
+answers. The router forwards were correct from the start; the block was the
+ThothOS Docker firewall, opened for these three ports with
+`tools/thothos-open-ports.sh` (see `docs/zathroth.md`). Still to test: a real
+client login and entering the game from outside.
 
 HTTPS decision: skipped for now. Let's Encrypt could not reach ports 80 or 443
 from the internet (both answer on the home network), and the game client logs
