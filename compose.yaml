@@ -58,6 +58,9 @@ services:
       ZATHROTH_CAPTCHA: "${ZATHROTH_CAPTCHA:-on}"
       # Only the HTTPS proxy below may say who the real visitor is.
       ZATHROTH_TRUSTED_PROXY: proxy
+      # When ZATHROTH_SERVER_IP is a public host name, clients on the home
+      # network are sent this address to reach the game instead.
+      ZATHROTH_LAN_IP: "${ZATHROTH_LAN_IP:-}"
     ports:
       - host_ip: *bind-ip
         published: "${ZATHROTH_ACCOUNT_PORT:-8088}"
@@ -87,6 +90,9 @@ services:
     restart: unless-stopped
     environment:
       ZATHROTH_DOMAIN: "${ZATHROTH_DOMAIN:-localhost}"
+      # Point this at https://acme-staging-v02.api.letsencrypt.org/directory to
+      # test without touching Let's Encrypt's real rate limits.
+      ZATHROTH_ACME_CA: "${ZATHROTH_ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}"
     volumes:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
       # Certificates and the ACME account; kept in the cloned folder like the database.

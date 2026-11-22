@@ -73,7 +73,7 @@ def client_events():
 
 
 class AccountServer(ThreadingHTTPServer):
-    def __init__(self, address, accounts, game_host, game_port, captcha=True, trusted_proxy=""):
+    def __init__(self, address, accounts, game_host, game_port, captcha=True, trusted_proxy="", lan_host=""):
         super().__init__(address, AccountHandler)
         self.accounts = accounts
         self.captcha_enabled = captcha
@@ -81,6 +81,9 @@ class AccountServer(ThreadingHTTPServer):
         # service. Only it may say, through X-Forwarded-For and -Proto, who the
         # real visitor is and whether they used HTTPS.
         self.trusted_proxy = trusted_proxy
+        # Clients on the home network get this game address instead of
+        # game_host: a router often cannot loop back to its own public address.
+        self.lan_host = lan_host
         self.proxy_lock = Lock()
         self.proxy_addresses = set()
         self.proxy_refresh = 0
@@ -117,6 +120,16 @@ class AccountServer(ThreadingHTTPServer):
                 return False
             self.rate_counts[address] = count + 1
             return True
+
+    def world_for(self, address):
+        if self.lan_host:
+            try:
+                private = ipaddress.ip_address(address).is_private
+            except ValueError:
+                private = False
+            if private:
+                return {**self.world, "externaladdressprotected": self.lan_host, "externaladdressunprotected": self.lan_host}
+        return self.world
 
     def is_trusted_proxy(self, address):
         if not self.trusted_proxy:
@@ -436,7 +449,7 @@ class AccountHandler(BaseHTTPRequestHandler):
                     "isreturner": False, "showrewardnews": False, "recoverysetupcomplete": False,
                     "returnernotification": False, "optiontracking": False, "fpstracking": False,
                 },
-                "playdata": {"worlds": [self.server.world], "characters": [self.game_character(row) for row in rows]},
+                "playdata": {"worlds": [self.server.world_for(address)], "characters": [self.game_character(row) for row in rows]},
             })
         except AccountError as error:
             self.json_response({"errorCode": 3, "errorMessage": str(error)})
@@ -584,6 +597,7 @@ def main():
         int(os.environ.get("ZATHROTH_GAME_PORT", "7172")),
         captcha=os.environ.get("ZATHROTH_CAPTCHA", "on").lower() != "off",
         trusted_proxy=os.environ.get("ZATHROTH_TRUSTED_PROXY", ""),
+        lan_host=os.environ.get("ZATHROTH_LAN_IP", ""),
     )
     with server:
         print(f"ZATHROTH Account Manager and game login listening on port {port}", flush=True)

@@ -64,10 +64,15 @@ The `https` profile adds a Caddy container that serves the account service over 
 ```dotenv
 ZATHROTH_DOMAIN=yourname.ddns.net
 ZATHROTH_SERVER_IP=yourname.ddns.net
+ZATHROTH_LAN_IP=192.168.1.104
 COMPOSE_PROFILES=https
+# First run only: a test certificate, so a mistake does not use up Let's Encrypt's real limits.
+ZATHROTH_ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
 ```
 
-3. Run `./up.sh`. Players open `https://yourname.ddns.net/` in a browser, and a client that supports HTTPS logins uses `https://yourname.ddns.net/login`.
+`ZATHROTH_SERVER_IP` is the game address sent to players on the internet. Players on your home network are sent `ZATHROTH_LAN_IP` instead, because many routers cannot connect to their own public address.
+
+3. Run `./up.sh`. When the log shows the test certificate was obtained (`docker compose logs proxy`), delete the `ZATHROTH_ACME_CA` line and run `./up.sh` again for the real one. Players open `https://yourname.ddns.net/` in a browser, and a client that supports HTTPS logins uses `https://yourname.ddns.net/login`.
 
 Certificates are kept in `database/caddy` (Caddy writes them as root, so removing that folder needs `sudo`). Let's Encrypt limits failed attempts, so check the host name resolves and the ports are forwarded before the first start. Plain HTTP on port 8088 keeps working for clients without HTTPS support; once every client uses HTTPS, remove the 8088 forward from the router. The game connection on 7172 is not HTTPS.
 

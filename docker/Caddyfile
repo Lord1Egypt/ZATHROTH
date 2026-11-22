@@ -4,6 +4,7 @@
 # domain must already point at this server's public address, and ports 80 and
 # 443 must be forwarded to this machine.
 {
+	acme_ca {$ZATHROTH_ACME_CA}
 	servers {
 		protocols h1 h2
 	}

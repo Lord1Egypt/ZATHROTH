@@ -307,6 +307,21 @@ class AccountManagerTest(unittest.TestCase):
         garbled = Browser(base, {"X-Forwarded-For": "not an address"})
         self.assertIn("session", garbled.game("adventurer", "Adventure pass")[1])
 
+    def test_home_network_clients_get_the_lan_game_address(self):
+        self.game_startup()
+        server, base = self.second_server(trusted_proxy="127.0.0.1", lan_host="192.168.1.104")
+        server.accounts.register("adventurer", "adventurer@example.test", "Adventure pass")
+        server.world["externaladdressprotected"] = server.world["externaladdressunprotected"] = "zathroth.example.test"
+
+        def address(headers):
+            world = Browser(base, headers).game("adventurer", "Adventure pass")[1]["playdata"]["worlds"][0]
+            self.assertEqual(world["externaladdressprotected"], world["externaladdressunprotected"])
+            return world["externaladdressprotected"]
+
+        self.assertEqual(address({"X-Forwarded-For": "8.8.8.8"}), "zathroth.example.test")
+        self.assertEqual(address({"X-Forwarded-For": "192.168.1.50"}), "192.168.1.104")
+        self.assertEqual(address({}), "192.168.1.104")
+
     def test_forwarded_headers_from_anyone_else_are_ignored(self):
         self.game_startup()
         self.register(self.browser, "adventurer", "adventurer@example.test")
