@@ -22,3 +22,5 @@ button.secondary { color: #e1bb76; background: transparent; }
 ul { padding: 0; list-style: none; }
 li { display: flex; gap: .6rem; justify-content: space-between; flex-wrap: wrap; align-items: center; padding: .5rem 0; border-bottom: 1px solid #4c4132; }
 li form { margin: 0; }
+.captcha-box { margin-block: .7rem; }
+.captcha { display: block; max-width: 100%; height: auto; background: #231f1a; border: 1px solid #82745e; border-radius: .25rem; }

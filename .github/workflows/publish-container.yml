@@ -55,12 +55,16 @@ jobs:
         env:
           ZATHROTH_IMAGE: ${{ steps.image.outputs.tag }}
           ZATHROTH_SERVER_IP: 127.0.0.1
+          # The smoke test registers a browser account and cannot solve a CAPTCHA;
+          # account_manager/test_server.py covers the CAPTCHA.
+          ZATHROTH_CAPTCHA: "off"
         run: |
           docker compose up -d --pull never --wait --wait-timeout 900
           docker compose logs --no-color game > zathroth-startup.log
           grep -F "Compiled by Mohamed Mounir" zathroth-startup.log
           grep -F "akim.221992@gmail.com" zathroth-startup.log
           python3 .github/scripts/zathroth-smoke.py
+          docker compose exec -T -w /opt/zathroth/account_manager accounts python3 -m unittest -q test_server test_guard
           docker compose logs --no-color game | grep -F "Zathroth Trader is waiting in 21 of 21 depots"
           if docker compose logs --no-color game | grep -F "is being sold for a value greater"; then
             echo "An NPC buys an item for more than another NPC sells it" >&2

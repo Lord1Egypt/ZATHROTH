@@ -49,6 +49,7 @@ private:
 	void reset(Step next);
 
 	uint32_t accountId;
+	uint32_t address = 0;
 	bool creatingAccount;
 	Step step;
 	std::string pendingName;

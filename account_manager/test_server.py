@@ -6,14 +6,19 @@ import json
 import os
 from pathlib import Path
 import re
+import socket
 import sqlite3
 from tempfile import TemporaryDirectory
 from threading import Thread
+import time
 import unittest
+from unittest import mock
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
+import guard
+import server as account_server
 from server import AccountServer, ROOT
 from storage import MANAGER_NAME, Accounts
 
@@ -27,7 +32,7 @@ class Browser:
     def request(self, route, data=None, headers=None):
         request = Request(self.base + route, data=data, headers=headers or {})
         try:
-            with self.opener.open(request, timeout=5) as response:
+            with self.opener.open(request, timeout=20) as response:
                 status, body = response.status, response.read().decode()
         except HTTPError as error:
             with error:
@@ -71,10 +76,16 @@ class AccountManagerTest(unittest.TestCase):
         with sqlite3.connect(self.db_path) as db:
             db.execute("INSERT INTO towns (id, name, posx, posy, posz) VALUES (1, 'Temple', 100, 100, 7)")
 
+    def solve(self, page):
+        """The CAPTCHA fields that answer the challenge shown on `page`."""
+        token = re.search(r'name="captcha_id" value="([0-9a-f]+)"', page)[1]
+        return {"captcha_id": token, "captcha": self.server.captchas.pending[token][0]}
+
     def register(self, browser, name, email):
         self.assertEqual(browser.request("/")[0], 200)
-        self.assertIn("Create an account", browser.form("signin", identifier="1", password="1")[1])
-        status, body = browser.form("register", name=name, email=email, password="Adventure pass", confirm="Adventure pass")
+        page = browser.form("signin", identifier="1", password="1")[1]
+        self.assertIn("Create an account", page)
+        status, body = browser.form("register", name=name, email=email, password="Adventure pass", confirm="Adventure pass", **self.solve(page))
         self.assertEqual(status, 200, body)
         self.assertIn("Account created", body)
 
@@ -155,12 +166,140 @@ class AccountManagerTest(unittest.TestCase):
 
         other = Browser(self.base)
         other.request("/")
-        other.form("signin", identifier="1", password="1")
-        self.assertIn("already registered", other.form("register", name="Another", email="ADVENTURER@EXAMPLE.TEST", password="Adventure pass", confirm="Adventure pass")[1])
-        self.assertEqual(other.form("register", name="Another", email="another@example.test", password="Adventure pass", confirm="Adventure pass")[0], 200)
+        page = other.form("signin", identifier="1", password="1")[1]
+        body = other.form("register", name="Another", email="ADVENTURER@EXAMPLE.TEST", password="Adventure pass", confirm="Adventure pass", **self.solve(page))[1]
+        self.assertIn("already registered", body)
+        self.assertEqual(other.form("register", name="Another", email="another@example.test", password="Adventure pass", confirm="Adventure pass", **self.solve(body))[0], 200)
         self.assertIn("already in use", other.form("character", name="arden fox", sex="1", vocation="2")[1])
         self.assertEqual(other.form("delete", character=character["characterid"])[0], 400)
         self.assertEqual(self.browser.game("adventurer", "Adventure pass")[1]["playdata"]["characters"][0]["name"], "Arden Fox")
+
+    def guest_page(self, browser=None):
+        browser = browser or self.browser
+        browser.request("/")
+        return browser.form("signin", identifier="1", password="1")[1]
+
+    def test_registration_needs_the_captcha(self):
+        self.game_startup()
+        page = self.guest_page()
+        self.assertIn('name="captcha_id"', page)
+        self.assertNotIn("<text", page)
+        fields = dict(name="newplayer", email="new@example.test", password="Adventure pass", confirm="Adventure pass")
+
+        status, body = self.browser.form("register", **fields)
+        self.assertEqual(status, 400)
+        self.assertIn("characters did not match", body)
+
+        solved = self.solve(body)
+        status, body = self.browser.form("register", **fields, captcha_id=solved["captcha_id"], captcha="WRONG")
+        self.assertEqual(status, 400)
+        self.assertIn("characters did not match", body)
+        self.assertNotIn(solved["captcha_id"], body)
+        with sqlite3.connect(self.db_path) as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM accounts WHERE name = 'newplayer'").fetchone(), (0,))
+
+        # A used challenge cannot be answered again, even correctly.
+        status, body = self.browser.form("register", **fields, **solved)
+        self.assertEqual(status, 400)
+        status, body = self.browser.form("register", **fields, **self.solve(body))
+        self.assertEqual(status, 200, body)
+        self.assertIn("Account created", body)
+
+    def test_sign_in_asks_for_a_captcha_after_failures(self):
+        self.game_startup()
+        self.register(self.browser, "adventurer", "adventurer@example.test")
+        other = Browser(self.base)
+        other.request("/")
+        for _ in range(guard.IP_CAPTCHA_AFTER):
+            self.assertNotIn("captcha_id", other.request("/")[1])
+            status, body = other.form("signin", identifier="adventurer", password="wrong password")
+            self.assertEqual(status, 400)
+        self.assertIn("captcha_id", body)
+
+        status, body = other.form("signin", identifier="adventurer", password="Adventure pass")
+        self.assertEqual(status, 400)
+        self.assertIn("characters did not match", body)
+        status, body = other.form("signin", identifier="adventurer", password="Adventure pass", **self.solve(body))
+        self.assertEqual(status, 200)
+        self.assertIn("adventurer", body)
+
+    def test_repeated_failures_block_game_and_browser_logins(self):
+        self.game_startup()
+        self.register(self.browser, "adventurer", "adventurer@example.test")
+        for _ in range(guard.IP_BLOCK_AFTER):
+            self.assertEqual(self.browser.game("adventurer", "wrong password")[1]["errorCode"], 3)
+        status, game = self.browser.game("adventurer", "Adventure pass")
+        self.assertEqual(game["errorCode"], 2)
+        self.assertIn("Too many failed attempts", game["errorMessage"])
+
+        other = Browser(self.base)
+        other.request("/")
+        status, body = other.form("signin", identifier="adventurer", password="Adventure pass")
+        self.assertEqual(status, 400)
+        self.assertIn("Too many failed attempts", body)
+        # The shared 1/1 login is not a guess and stays available.
+        self.assertEqual(self.browser.game("1", "1")[1]["playdata"]["characters"][0]["name"], MANAGER_NAME)
+
+    def test_new_accounts_are_limited_per_address(self):
+        self.game_startup()
+        for index in range(guard.REGISTRATIONS_PER_IP):
+            browser = Browser(self.base)
+            page = self.guest_page(browser)
+            status, body = browser.form("register", name=f"player{index}", email=f"p{index}@example.test", password="Adventure pass", confirm="Adventure pass", **self.solve(page))
+            self.assertEqual(status, 200, body)
+        browser = Browser(self.base)
+        page = self.guest_page(browser)
+        status, body = browser.form("register", name="onemore", email="more@example.test", password="Adventure pass", confirm="Adventure pass", **self.solve(page))
+        self.assertEqual(status, 400)
+        self.assertIn("Too many accounts", body)
+
+    def test_common_passwords_are_refused(self):
+        self.game_startup()
+        page = self.guest_page()
+        for password in ("password123", "aaaaaaaaaa", "xxadventurerxx"):
+            status, body = self.browser.form("register", name="adventurer", email="a@example.test", password=password, confirm=password, **self.solve(page))
+            self.assertEqual(status, 400, password)
+            self.assertIn("harder to guess", body)
+            page = body
+
+    def test_only_wrong_passwords_count_as_failures(self):
+        self.game_startup()
+        self.register(self.browser, "adventurer", "adventurer@example.test")
+        for _ in range(guard.IP_BLOCK_AFTER + 2):
+            status, body = self.browser.form("password", current="Adventure pass", password="password123", confirm="password123")
+            self.assertEqual(status, 400)
+            self.assertIn("harder to guess", body)
+        status, body = self.browser.form("password", current="Adventure pass", password="Another long pass", confirm="Another long pass")
+        self.assertEqual(status, 200, body)
+        self.assertIn("Password changed", body)
+
+    def test_idle_and_slow_connections_are_cut_off(self):
+        with mock.patch.object(account_server, "REQUEST_DEADLINE", 1):
+            slow = socket.create_connection(("127.0.0.1", self.server.server_port))
+            slow.sendall(b"GET / HTTP/1.0\r\nX-Slow: ")
+            time.sleep(2.5)
+            slow.settimeout(5)
+            try:
+                self.assertEqual(slow.recv(1), b"")
+            except ConnectionResetError:
+                pass
+            slow.close()
+
+        idle = [socket.create_connection(("127.0.0.1", self.server.server_port)) for _ in range(account_server.MAX_CONNECTIONS_PER_IP)]
+        try:
+            time.sleep(0.5)
+            extra = socket.create_connection(("127.0.0.1", self.server.server_port))
+            extra.settimeout(5)
+            try:
+                self.assertEqual(extra.recv(1), b"")
+            except ConnectionResetError:
+                pass
+            extra.close()
+        finally:
+            for connection in idle:
+                connection.close()
+        time.sleep(0.5)
+        self.assertEqual(self.browser.request("/")[0], 200)
 
 
 @unittest.skipUnless(os.getenv("ZATHROTH_TEST_URL"), "set ZATHROTH_TEST_URL for the read-only live smoke")

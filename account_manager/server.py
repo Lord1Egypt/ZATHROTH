@@ -1,4 +1,4 @@
-"""ZATHROTH's LAN account manager and modern game login endpoint."""
+"""ZATHROTH's account manager and modern game login endpoint."""
 
 from datetime import datetime
 import hashlib
@@ -11,12 +11,14 @@ import json
 import os
 from pathlib import Path
 import secrets
+import socket
 import sqlite3
-from threading import BoundedSemaphore, Lock
+from threading import BoundedSemaphore, Lock, Timer
 import time
 from urllib.parse import parse_qs
 
-from storage import AccountError, Accounts, START_VOCATIONS
+from guard import AuthGuard, Captchas
+from storage import AccountError, Accounts, START_VOCATIONS, WrongPassword
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +26,13 @@ STYLES = (Path(__file__).with_name("style.css")).read_bytes()
 COOKIE = "zathroth_account"
 WEB_SESSION_LIFETIME = 3600
 MAX_BODY_BYTES = 16384
+MAX_CONNECTIONS = 64
+MAX_CONNECTIONS_PER_IP = 8
+# One request per connection (HTTP/1.0). The socket timeout only limits the
+# wait for each read, so a client sending a byte every few seconds would hold
+# a slot forever; this caps the whole connection.
+REQUEST_DEADLINE = 30
+BLOCKED_MESSAGE = "Too many failed attempts. Try again in a few minutes."
 
 
 class RequestError(ValueError):
@@ -63,9 +72,13 @@ def client_events():
 
 
 class AccountServer(ThreadingHTTPServer):
-    def __init__(self, address, accounts, game_host, game_port):
+    def __init__(self, address, accounts, game_host, game_port, captcha=True):
         super().__init__(address, AccountHandler)
         self.accounts = accounts
+        self.captcha_enabled = captcha
+        self.captchas = Captchas()
+        self.guard = AuthGuard()
+        self.active = {}
         self.world = {
             "id": 0, "name": "ZATHROTH", "location": "LAN",
             "externaladdressprotected": game_host, "externaladdressunprotected": game_host,
@@ -74,7 +87,7 @@ class AccountServer(ThreadingHTTPServer):
             "pvptype": 3,  # Retro Open PvP, matching config.lua.dist.
         }
         self.secret = secrets.token_bytes(32)
-        self.connections = BoundedSemaphore(12)
+        self.connections = BoundedSemaphore(MAX_CONNECTIONS)
         self.hashers = BoundedSemaphore(2)
         self.rate_lock = Lock()
         self.rate_window = 0
@@ -97,22 +110,51 @@ class AccountServer(ThreadingHTTPServer):
             self.rate_counts[address] = count + 1
             return True
 
-    def process_request(self, request, client_address):
+    def take_slot(self, address):
         if not self.connections.acquire(blocking=False):
+            return False
+        with self.rate_lock:
+            if self.active.get(address, 0) >= MAX_CONNECTIONS_PER_IP:
+                self.connections.release()
+                return False
+            self.active[address] = self.active.get(address, 0) + 1
+        return True
+
+    def release_slot(self, address):
+        with self.rate_lock:
+            if self.active[address] <= 1:
+                del self.active[address]
+            else:
+                self.active[address] -= 1
+        self.connections.release()
+
+    def process_request(self, request, client_address):
+        if not self.take_slot(client_address[0]):
             self.shutdown_request(request)
             return
         request.settimeout(10)
         try:
             super().process_request(request, client_address)
         except BaseException:
-            self.connections.release()
+            self.release_slot(client_address[0])
             raise
 
     def process_request_thread(self, request, client_address):
+        deadline = Timer(REQUEST_DEADLINE, self.abandon, (request,))
+        deadline.daemon = True
+        deadline.start()
         try:
             super().process_request_thread(request, client_address)
         finally:
-            self.connections.release()
+            deadline.cancel()
+            self.release_slot(client_address[0])
+
+    @staticmethod
+    def abandon(request):
+        try:
+            request.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
 
 
 class AccountHandler(BaseHTTPRequestHandler):
@@ -204,6 +246,17 @@ class AccountHandler(BaseHTTPRequestHandler):
         cookie = f"{COOKIE}={value}; Path=/; Max-Age={WEB_SESSION_LIFETIME}; HttpOnly; SameSite=Strict"
         return nonce, cookie
 
+    def captcha_block(self):
+        token, picture = self.server.captchas.issue()
+        return f"""<div class="captcha-box">{picture}</div>
+<input type="hidden" name="captcha_id" value="{token}">
+<label>Type the characters from the picture <input name="captcha" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="12" required></label>
+"""
+
+    def check_captcha(self, fields):
+        if self.server.captcha_enabled and not self.server.captchas.verify(fields.get("captcha_id", ""), fields.get("captcha", "")):
+            raise AccountError("The characters did not match. Try the new picture.")
+
     def form(self, action, nonce, fields, label, button_class=""):
         return f"""<form action="/manage" method="post">
 <input type="hidden" name="action" value="{action}">
@@ -224,14 +277,15 @@ class AccountHandler(BaseHTTPRequestHandler):
 <label>Email <input name="email" type="email" autocomplete="email" maxlength="255" required></label>
 <label>Password <input name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required></label>
 <label>Confirm password <input name="confirm" type="password" autocomplete="new-password" maxlength="128" required></label>
-""", "Create account") + self.form("logout", nonce, "", "Back to sign in", "secondary")
+""" + (self.captcha_block() if self.server.captcha_enabled else ""), "Create account") + self.form("logout", nonce, "", "Back to sign in", "secondary")
         else:
+            challenge = self.captcha_block() if self.server.captcha_enabled and self.server.guard.needs_captcha(self.client_address[0]) else ""
             content = self.form("signin", nonce, """
 <h2>Sign in</h2>
 <p>To create your first account, enter <strong>1</strong> in both fields.</p>
 <label>Account name or email <input name="identifier" autocomplete="username" maxlength="255" required></label>
 <label>Password <input name="password" type="password" autocomplete="current-password" maxlength="128" required></label>
-""", "Sign in")
+""" + challenge, "Sign in")
         self.send_page(content, message=message, status=status, cookie=cookie)
 
     def character_page(self, account, nonce):
@@ -309,14 +363,23 @@ class AccountHandler(BaseHTTPRequestHandler):
             password = payload.get("password", "")
             if not isinstance(identifier, str) or not isinstance(password, str) or len(identifier) > 255:
                 raise RequestError("Use a valid account name and password.")
-            if not self.server.allow_auth(self.client_address[0]):
+            address = self.client_address[0]
+            if not self.server.allow_auth(address):
                 self.json_response({"errorCode": 2, "errorMessage": "Too many attempts. Try again shortly."})
                 return
             if identifier.strip() == "1" and password == "1":
                 key, account, rows = self.accounts.start_game_session()
             else:
-                with self.server.hashers:
-                    account = self.accounts.authenticate(identifier.strip(), password)
+                if self.server.guard.blocked(address, identifier):
+                    self.log_message("%s", "game login blocked: too many failures")
+                    self.json_response({"errorCode": 2, "errorMessage": BLOCKED_MESSAGE})
+                    return
+                try:
+                    with self.server.hashers:
+                        account = self.accounts.authenticate(identifier.strip(), password)
+                except WrongPassword:
+                    self.server.guard.failed(address, identifier)
+                    raise
                 key, account, rows = self.accounts.start_game_session(account)
             device_cookie = payload.get("devicecookie", "")
             lastday = max(0, account["lastday"])
@@ -382,7 +445,9 @@ class AccountHandler(BaseHTTPRequestHandler):
             if action == "logout":
                 self.browser_page(("anonymous", None, ""))
                 return
-            if action in ("signin", "register", "password") and not self.server.allow_auth(self.client_address[0]):
+            address = self.client_address[0]
+            guard = self.server.guard
+            if action in ("signin", "register", "password") and not self.server.allow_auth(address):
                 raise AccountError("Too many attempts. Try again shortly.")
             if action == "signin" and subject == "anonymous":
                 identifier = fields.get("identifier", "").strip()
@@ -390,13 +455,27 @@ class AccountHandler(BaseHTTPRequestHandler):
                 if identifier == "1" and password == "1":
                     self.browser_page(("guest", None, ""))
                 else:
-                    with self.server.hashers:
-                        account = self.accounts.authenticate(identifier, password)
+                    if guard.blocked(address, identifier):
+                        self.log_message("%s", "sign-in blocked: too many failures")
+                        raise AccountError(BLOCKED_MESSAGE)
+                    if guard.needs_captcha(address):
+                        self.check_captcha(fields)
+                    try:
+                        with self.server.hashers:
+                            account = self.accounts.authenticate(identifier, password)
+                    except WrongPassword:
+                        guard.failed(address, identifier)
+                        raise
                     self.browser_page(("account", account, ""))
             elif action == "register" and subject == "guest":
                 self.check_confirmation(fields)
+                self.check_captcha(fields)
+                if not guard.may_register(address):
+                    self.log_message("%s", "registration refused: too many new accounts")
+                    raise AccountError("Too many accounts were created from your address. Try again tomorrow.")
                 with self.server.hashers:
                     account = self.accounts.register(fields.get("name", "").strip(), fields.get("email", "").strip(), fields["password"])
+                guard.registered(address)
                 self.browser_page(("account", account, ""), message="Account created. Create your first character below.")
             elif account:
                 self.update_account(session, action, fields)
@@ -428,8 +507,16 @@ class AccountHandler(BaseHTTPRequestHandler):
             self.browser_page(session, message=message)
         elif action == "password":
             self.check_confirmation(fields)
-            with self.server.hashers:
-                account = self.accounts.change_password(account, fields.get("current", ""), fields["password"])
+            address, guard = self.client_address[0], self.server.guard
+            if guard.blocked(address, account["name"]):
+                self.log_message("%s", "password change blocked: too many failures")
+                raise AccountError(BLOCKED_MESSAGE)
+            try:
+                with self.server.hashers:
+                    account = self.accounts.change_password(account, fields.get("current", ""), fields["password"])
+            except WrongPassword:
+                guard.failed(address, account["name"])
+                raise
             self.browser_page(("account", account, ""), message="Password changed.")
         else:
             raise RequestError("Unknown account action.")
@@ -451,6 +538,7 @@ def main():
         ("0.0.0.0", port), accounts,
         os.environ.get("ZATHROTH_SERVER_IP", "192.168.1.104"),
         int(os.environ.get("ZATHROTH_GAME_PORT", "7172")),
+        captcha=os.environ.get("ZATHROTH_CAPTCHA", "on").lower() != "off",
     )
     with server:
         print(f"ZATHROTH Account Manager and game login listening on port {port}", flush=True)

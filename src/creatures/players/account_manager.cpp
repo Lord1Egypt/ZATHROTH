@@ -12,12 +12,53 @@
 
 #include <argon2.h>
 
+#ifndef USE_PRECOMPILED_HEADERS
+	#include <deque>
+	#include <map>
+	#include <mutex>
+	#include <set>
+#endif
+
 namespace account_manager_rules {
 	// Keep these rules in step with account_manager/storage.py so the browser
 	// and in-game managers accept the same names and passwords.
 	constexpr uint32_t MAX_CHARACTERS = 20;
 	constexpr std::array<uint16_t, 5> START_VOCATIONS = { 1, 2, 3, 4, 9 };
 	constexpr time_t DELETION_DELAY = 7 * 24 * 60 * 60;
+	// Hashing a password blocks the game thread and the game port is open to the
+	// internet, so cap new accounts per address per day and for the whole server
+	// per hour. In memory only: a restart clears it.
+	constexpr size_t MAX_ACCOUNTS_PER_ADDRESS = 5;
+	constexpr size_t MAX_ACCOUNTS_PER_HOUR = 60;
+
+	bool takeAccountSlot(uint32_t address) {
+		static std::mutex lock;
+		static std::map<uint32_t, std::deque<time_t>> perAddress;
+		static std::deque<time_t> recent;
+		const auto now = time(nullptr);
+		std::scoped_lock guard(lock);
+		while (!recent.empty() && recent.front() <= now - 3600) {
+			recent.pop_front();
+		}
+		if (perAddress.size() > 4096) {
+			std::erase_if(perAddress, [now](auto &entry) {
+				while (!entry.second.empty() && entry.second.front() <= now - 86400) {
+					entry.second.pop_front();
+				}
+				return entry.second.empty();
+			});
+		}
+		auto &mine = perAddress[address];
+		while (!mine.empty() && mine.front() <= now - 86400) {
+			mine.pop_front();
+		}
+		if (mine.size() >= MAX_ACCOUNTS_PER_ADDRESS || recent.size() >= MAX_ACCOUNTS_PER_HOUR) {
+			return false;
+		}
+		mine.push_back(now);
+		recent.push_back(now);
+		return true;
+	}
 	const std::regex ACCOUNT_NAME("[a-zA-Z0-9][a-zA-Z0-9_-]{2,31}");
 	const std::regex CHARACTER_NAME("[a-zA-Z]+(?:[ '-][a-zA-Z]+)*");
 	const std::array<std::string_view, 7> STAFF_PREFIXES = { "admin", "administrator", "accountmanager", "cm", "gamemaster", "gm", "god" };
@@ -26,6 +67,20 @@ namespace account_manager_rules {
 
 	bool validPassword(const std::string &password) {
 		return password.size() >= 8 && password.size() <= 128 && password.find_first_of(std::string_view("\0\r\n", 3)) == std::string::npos;
+	}
+
+	// The passwords attackers try first, in lower case; same list as
+	// COMMON_PASSWORDS in account_manager/storage.py.
+	bool weakPassword(const std::string &password) {
+		static const std::set<std::string_view> COMMON_PASSWORDS = {
+			"password", "password1", "password123", "passw0rd", "p@ssw0rd", "12345678", "123456789", "1234567890",
+			"qwertyui", "qwerty123", "qwertyuiop", "1q2w3e4r", "iloveyou", "letmein1", "letmein123", "welcome1",
+			"welcome123", "admin123", "administrator", "changeme", "trustno1", "abcd1234", "abc12345", "11111111",
+			"00000000", "87654321", "football", "baseball", "superman", "dragon123", "monkey123",
+			"zathroth", "zathroth1", "zathroth123", "tibia123", "canary123"
+		};
+		const std::set<char> distinct(password.begin(), password.end());
+		return distinct.size() < 4 || COMMON_PASSWORDS.contains(asLowerCaseString(password));
 	}
 
 	bool validCharacterName(const std::string &name) {
@@ -102,6 +157,7 @@ void AccountManager::onSay(const std::shared_ptr<Player> &player, const std::str
 		return;
 	}
 	const auto keyword = asLowerCaseString(trimmed);
+	address = player->getIP();
 	const auto reply = creatingAccount ? handleNewAccount(trimmed, keyword) : handleAccount(trimmed, keyword);
 	player->sendTextMessage(MESSAGE_LOOK, "Account Manager: " + reply);
 }
@@ -132,6 +188,9 @@ std::string AccountManager::handleNewAccount(const std::string &text, const std:
 			if (!validPassword(text)) {
 				return "Your password must have 8 to 128 characters. Please choose another one.";
 			}
+			if (weakPassword(text)) {
+				return "That password is too easy to guess. Please choose another one.";
+			}
 			pendingPassword = text;
 			step = Step::NewPasswordRepeat;
 			return "Please say the same password again to confirm it.";
@@ -149,8 +208,8 @@ std::string AccountManager::handleNewAccount(const std::string &text, const std:
 			if (!std::regex_match(text, ACCOUNT_NAME)) {
 				return "Your account name must have 3 to 32 letters, digits, hyphens or underscores, starting with a letter or digit.";
 			}
-			if (keyword == asLowerCaseString(pendingPassword)) {
-				return "Your account name cannot be the same as your password. Please choose another one.";
+			if (keyword.size() >= 4 && asLowerCaseString(pendingPassword).find(keyword) != std::string::npos) {
+				return "Your password cannot contain your account name. Please choose another account name.";
 			}
 			if (exists(fmt::format("SELECT 1 FROM `accounts` WHERE `name` = {}", db.escapeString(text)))) {
 				return "That account name is already taken. Please choose another one.";
@@ -166,6 +225,10 @@ std::string AccountManager::handleNewAccount(const std::string &text, const std:
 			}
 			if (keyword != "yes") {
 				return "Please say 'yes' or 'no'.";
+			}
+			if (!takeAccountSlot(address)) {
+				reset(Step::Start);
+				return "Too many accounts were created from your address. Please try again tomorrow.";
 			}
 			const auto hash = hashPassword(pendingPassword);
 			if (hash.empty()) {
@@ -325,6 +388,9 @@ std::string AccountManager::handleAccount(const std::string &text, const std::st
 		case Step::Password:
 			if (!validPassword(text)) {
 				return "Your password must have 8 to 128 characters. Please choose another one.";
+			}
+			if (weakPassword(text)) {
+				return "That password is too easy to guess. Please choose another one.";
 			}
 			pendingPassword = text;
 			step = Step::PasswordRepeat;

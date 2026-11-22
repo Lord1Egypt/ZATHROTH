@@ -15,6 +15,14 @@ from xml.etree import ElementTree
 ACCOUNT_NAME = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{2,31}")
 EMAIL = re.compile(r"[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+")
 CHARACTER_NAME = re.compile(r"[a-zA-Z]+(?:[ '-][a-zA-Z]+)*")
+# The passwords attackers try first; compared in lower case.
+COMMON_PASSWORDS = {
+    "password", "password1", "password123", "passw0rd", "p@ssw0rd", "12345678", "123456789", "1234567890",
+    "qwertyui", "qwerty123", "qwertyuiop", "1q2w3e4r", "iloveyou", "letmein1", "letmein123", "welcome1",
+    "welcome123", "admin123", "administrator", "changeme", "trustno1", "abcd1234", "abc12345", "11111111",
+    "00000000", "87654321", "football", "baseball", "superman", "dragon123", "monkey123",
+    "zathroth", "zathroth1", "zathroth123", "tibia123", "canary123",
+}
 STAFF_NAMES = {"admin", "administrator", "accountmanager", "cm", "gamemaster", "gm", "god"}
 DAY = 86400
 START_VOCATIONS = (1, 2, 3, 4, 9)
@@ -27,6 +35,18 @@ MANAGER_NAME = "Account Manager"
 
 class AccountError(ValueError):
     """A user-facing account error."""
+
+
+class WrongPassword(AccountError):
+    """A sign-in or password change with the wrong password; only these count against the sign-in limits."""
+
+
+def check_password(password, account_name):
+    """Refuses passwords that are on the common list, repeat a few characters or contain the account name."""
+    lowered = password.lower()
+    name = account_name.lower()
+    if lowered in COMMON_PASSWORDS or len(set(password)) < 4 or (len(name) >= 4 and name in lowered):
+        raise AccountError("Choose a password that is harder to guess.")
 
 
 class Passwords:
@@ -110,7 +130,7 @@ class Accounts:
 
     def authenticate(self, identifier, password):
         if not identifier:
-            raise AccountError("Account or password is incorrect.")
+            raise WrongPassword("Account or password is incorrect.")
         with self.connection() as db:
             # Accounts made in game have no email, so a blank email never matches.
             account = db.execute(
@@ -118,7 +138,7 @@ class Accounts:
                 (identifier, identifier),
             ).fetchone()
         if not self.passwords.matches(password, account["password"] if account else None):
-            raise AccountError("Account or password is incorrect.")
+            raise WrongPassword("Account or password is incorrect.")
         return account
 
     def get(self, account_id):
@@ -132,6 +152,7 @@ class Accounts:
             raise AccountError("Use 3–32 letters, digits, hyphens or underscores for the account name.")
         if len(email) > 255 or not EMAIL.fullmatch(email):
             raise AccountError("Enter a valid email address.")
+        check_password(password, name)
         password_hash = self.passwords.hash(password)
         with self.connection(write=True) as db:
             if db.execute("SELECT 1 FROM accounts WHERE name = ? OR email = ?", (name, email)).fetchone():
@@ -214,7 +235,8 @@ class Accounts:
 
     def change_password(self, account, current, new):
         if not self.passwords.matches(current, account["password"]):
-            raise AccountError("The current password is incorrect.")
+            raise WrongPassword("The current password is incorrect.")
+        check_password(new, account["name"])
         password_hash = self.passwords.hash(new)
         with self.connection(write=True) as db:
             self.ensure_current(db, account)

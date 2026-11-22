@@ -53,6 +53,9 @@ services:
     command: ["accounts"]
     environment:
       <<: *network-config
+      # "off" removes the CAPTCHA from account registration (private LAN
+      # installs and the CI smoke test, which cannot solve a picture).
+      ZATHROTH_CAPTCHA: "${ZATHROTH_CAPTCHA:-on}"
     ports:
       - host_ip: *bind-ip
         published: "${ZATHROTH_ACCOUNT_PORT:-8088}"
