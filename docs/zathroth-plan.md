@@ -88,8 +88,17 @@ use (OTClient Redemption with 15.25 assets, `httpLogin`).
 - The login background is `/images/title.jpg` (1920x1080 JPEG) inside
   `bin/graphics_resources.rcc`; a copy to edit is `D:\ZATHROTH_edit\title.jpg`.
   `tools/rcc_replace.py` puts the edited picture back (verified byte-identical
-  round trip). Waiting for the owner's picture, then package the client into
-  `downloads/` on the phone. The client has not been run on Windows by Claude.
+  round trip). Done 2026-11-22: the owner's picture (`D:\ZATHROTH_edit\Zathroth_ Kingdoms
+  Beneath Stormlight.png`, resized to 1920x1080 JPEG) is installed in
+  `D:\ZATHROTH\bin\graphics_resources.rcc` (original in
+  `D:\ZATHROTH_backup_original\bin\`), and `ZATHROTH-client.zip` (391 MB, without
+  the `storeimages` cache) is in `downloads/` on the phone. The client has not
+  been run on Windows by Claude.
+- Store icons: the client loads them from `coinImagesURL` (`config.lua.dist`,
+  currently `http://127.0.0.1/images/store/`, so none load) as
+  `<base>/64/<name>.png` (products) and `<base>/13/<name>.png` (categories).
+  The catalog uses OTClient-style names; CipSoft's host refuses outside
+  downloads and the AAC packages in `D:\AAC` do not contain the icons. Open.
 
 ## 5. Client downloads in the browser account manager
 
