@@ -11,12 +11,13 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import socket
 import sqlite3
 from threading import BoundedSemaphore, Lock, Thread, Timer
 import time
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote, unquote
 
 from guard import AuthGuard, Captchas
 from storage import AccountError, Accounts, START_VOCATIONS, WrongPassword
@@ -34,6 +35,13 @@ MAX_CONNECTIONS_PER_IP = 8
 # a slot forever; this caps the whole connection.
 REQUEST_DEADLINE = 30
 BLOCKED_MESSAGE = "Too many failed attempts. Try again in a few minutes."
+# Game client packages offered for download: the files in <repository>/downloads.
+DOWNLOAD_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._ -]{0,100}\.(?:zip|7z|rar|exe|msi)")
+MAX_DOWNLOADS = 4
+MAX_DOWNLOADS_PER_ADDRESS = 2
+# A download may take as long as the visitor needs, but a visitor that stops
+# reading for this long is dropped.
+DOWNLOAD_STALL_SECONDS = 60
 
 
 class RequestError(ValueError):
@@ -73,7 +81,7 @@ def client_events():
 
 
 class AccountServer(ThreadingHTTPServer):
-    def __init__(self, address, accounts, game_host, game_port, captcha=True, trusted_proxy="", lan_host=""):
+    def __init__(self, address, accounts, game_host, game_port, captcha=True, trusted_proxy="", lan_host="", downloads=None):
         super().__init__(address, AccountHandler)
         self.accounts = accounts
         self.captcha_enabled = captcha
@@ -104,6 +112,10 @@ class AccountServer(ThreadingHTTPServer):
         }
         self.secret = secrets.token_bytes(32)
         self.connections = BoundedSemaphore(MAX_CONNECTIONS)
+        self.downloads_dir = Path(downloads) if downloads else ROOT / "downloads"
+        self.downloading = BoundedSemaphore(MAX_DOWNLOADS)
+        self.downloads_by_address = {}
+        self.deadlines = {}
         self.hashers = BoundedSemaphore(2)
         self.rate_lock = Lock()
         self.rate_window = 0
@@ -181,12 +193,27 @@ class AccountServer(ThreadingHTTPServer):
     def process_request_thread(self, request, client_address):
         deadline = Timer(REQUEST_DEADLINE, self.abandon, (request,))
         deadline.daemon = True
+        self.deadlines[request] = deadline
         deadline.start()
         try:
             super().process_request_thread(request, client_address)
         finally:
             deadline.cancel()
+            self.deadlines.pop(request, None)
             self.release_slot(client_address[0])
+
+    def stop_deadline(self, request):
+        """Downloads outlast the request deadline; they have their own stall timeout."""
+        deadline = self.deadlines.get(request)
+        if deadline:
+            deadline.cancel()
+
+    def available_downloads(self):
+        try:
+            paths = sorted(self.downloads_dir.iterdir())
+        except OSError:
+            return []
+        return [(path.name, path.stat().st_size) for path in paths if DOWNLOAD_NAME.fullmatch(path.name) and path.is_file() and not path.is_symlink()]
 
     @staticmethod
     def abandon(request):
@@ -257,7 +284,18 @@ class AccountHandler(BaseHTTPRequestHandler):
             raise RequestError("Incomplete request.")
         return raw.decode("utf-8")
 
+    def downloads_section(self):
+        files = self.server.available_downloads()
+        if not files:
+            return ""
+        items = "".join(
+            f'<li><div><a href="/downloads/{quote(name)}">{escape(name)}</a><br>{size / 1048576:,.0f} MB</div></li>'
+            for name, size in files
+        )
+        return f"<section><h2>Download the game client</h2><ul>{items}</ul></section>"
+
     def send_page(self, body, *, message="", status=HTTPStatus.OK, cookie=None):
+        body += self.downloads_section()
         notice = f'<p class="notice" role="status">{escape(message)}</p>' if message else ""
         page = f"""<!doctype html>
 <html lang="en">
@@ -395,6 +433,8 @@ class AccountHandler(BaseHTTPRequestHandler):
                 self.json_response({"ready": ready}, HTTPStatus.OK if ready else HTTPStatus.SERVICE_UNAVAILABLE)
             elif self.path == "/":
                 self.browser_page(self.session())
+            elif self.path.startswith("/downloads/"):
+                self.send_download()
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
         except sqlite3.Error:
@@ -402,6 +442,61 @@ class AccountHandler(BaseHTTPRequestHandler):
                 self.json_response({"ready": False}, HTTPStatus.SERVICE_UNAVAILABLE)
             else:
                 self.send_page("", message="The game database is starting. Try again shortly.", status=HTTPStatus.SERVICE_UNAVAILABLE)
+
+    def send_download(self):
+        name = unquote(self.path[len("/downloads/"):].split("?", 1)[0])
+        path = self.server.downloads_dir / name
+        if not DOWNLOAD_NAME.fullmatch(name) or path.is_symlink() or not path.is_file():
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        size = path.stat().st_size
+        start, end, status = 0, size - 1, HTTPStatus.OK
+        requested = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range", "").strip())
+        if requested and (requested[1] or requested[2]):
+            if requested[1]:
+                start = int(requested[1])
+                end = min(int(requested[2]), size - 1) if requested[2] else size - 1
+            else:
+                start = max(0, size - int(requested[2]))
+            if start >= size or start > end:
+                self.send_response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            status = HTTPStatus.PARTIAL_CONTENT
+        address = self.address
+        with self.server.rate_lock:
+            allowed = self.server.downloads_by_address.get(address, 0) < MAX_DOWNLOADS_PER_ADDRESS and self.server.downloading.acquire(blocking=False)
+            if allowed:
+                self.server.downloads_by_address[address] = self.server.downloads_by_address.get(address, 0) + 1
+        if not allowed:
+            self.respond(HTTPStatus.SERVICE_UNAVAILABLE, "text/plain; charset=utf-8", b"Too many downloads are running. Try again in a few minutes.\n")
+            return
+        try:
+            self.server.stop_deadline(self.request)
+            self.connection.settimeout(DOWNLOAD_STALL_SECONDS)
+            self.send_response(status)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(end - start + 1))
+            self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+            self.send_header("Accept-Ranges", "bytes")
+            if status == HTTPStatus.PARTIAL_CONTENT:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            with path.open("rb") as handle:
+                self.connection.sendfile(handle, start, end - start + 1)
+        except OSError:
+            pass  # the visitor went away or stopped reading
+        finally:
+            with self.server.rate_lock:
+                remaining = self.server.downloads_by_address[address] - 1
+                if remaining:
+                    self.server.downloads_by_address[address] = remaining
+                else:
+                    del self.server.downloads_by_address[address]
+            self.server.downloading.release()
 
     def do_POST(self):
         if self.path in ("/login", "/login.php", "/"):

@@ -42,3 +42,4 @@ data-otservbr-global/world/otservbr.otbm
 .env.*
 **/__pycache__
 database/
+downloads/

@@ -430,3 +430,7 @@ canary-debug
 # Runtime data written by Docker Compose
 database/*
 !database/.gitkeep
+
+# Client packages offered for download by the account manager
+downloads/*
+!downloads/.gitkeep

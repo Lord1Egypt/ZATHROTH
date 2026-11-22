@@ -79,6 +79,10 @@ Certificates are kept in `database/caddy` (Caddy writes them as root, so removin
 
 The account service trusts the `X-Forwarded-For` and `X-Forwarded-Proto` headers only from the `proxy` container, so the limits below see each visitor's real address and the session cookie is marked `Secure`.
 
+## Client downloads
+
+Put client packages (`.zip`, `.7z`, `.rar`, `.exe` or `.msi`) in the `downloads/` folder of the clone. The account manager lists them on its pages with their size and serves them from `http://<host>:8088/downloads/<file>`, with resumable downloads. At most 4 downloads run at once (2 per address), so players cannot slow the logins down. The folder is not part of Git or the Docker image. `python3 tools/package_client.py <client folder> downloads/ZATHROTH-client.zip` makes a package from a client folder.
+
 ## Security
 
 Over plain HTTP (port 8088), passwords and game session keys are not encrypted on the way. The HTTPS profile above protects the website only: the game client keeps logging in over HTTP on port 8088 unless it supports `https://` login addresses. It is off by default.

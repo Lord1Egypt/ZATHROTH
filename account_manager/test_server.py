@@ -15,7 +15,7 @@ import unittest
 from unittest import mock
 from urllib.error import HTTPError
 from urllib.parse import urlencode
-from urllib.request import HTTPCookieProcessor, Request, build_opener
+from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 
 import guard
 import server as account_server
@@ -352,6 +352,72 @@ class AccountManagerTest(unittest.TestCase):
             spoof.game("adventurer", "wrong password")
         spoof.headers["X-Forwarded-For"] = "198.51.100.99"
         self.assertEqual(spoof.game("adventurer", "Adventure pass")[1]["errorCode"], 2)
+
+    def fetch(self, base, path, headers=None):
+        try:
+            with urlopen(Request(base + path, headers=headers or {}), timeout=20) as response:
+                return response.status, response.headers, response.read()
+        except HTTPError as error:
+            with error:
+                return error.code, error.headers, error.read()
+
+    def test_client_packages_are_listed_and_downloaded(self):
+        folder = Path(self.db_path).parent / "downloads"
+        folder.mkdir()
+        payload = os.urandom(3_000_000)
+        (folder / "ZATHROTH client.zip").write_bytes(payload)
+        (folder / "notes.txt").write_text("not a package")
+        (folder / "linked.zip").symlink_to(self.db_path)
+        (folder.parent / "outside.zip").write_bytes(b"outside")
+        server, base = self.second_server(downloads=folder)
+
+        page = Browser(base).request("/")[1]
+        self.assertIn('href="/downloads/ZATHROTH%20client.zip"', page)
+        self.assertIn("3 MB", page)
+        self.assertNotIn("notes.txt", page)
+        self.assertNotIn("linked.zip", page)
+
+        status, headers, body = self.fetch(base, "/downloads/ZATHROTH%20client.zip")
+        self.assertEqual((status, body), (200, payload))
+        self.assertEqual(headers["Content-Length"], str(len(payload)))
+        self.assertEqual(headers["Content-Disposition"], 'attachment; filename="ZATHROTH client.zip"')
+        self.assertEqual(headers["Accept-Ranges"], "bytes")
+
+        for request, expected, content_range in (
+            ("bytes=100-199", payload[100:200], "bytes 100-199/3000000"),
+            ("bytes=-50", payload[-50:], "bytes 2999950-2999999/3000000"),
+            ("bytes=2999990-", payload[-10:], "bytes 2999990-2999999/3000000"),
+            ("bytes=2999990-9999999", payload[-10:], "bytes 2999990-2999999/3000000"),
+        ):
+            status, headers, body = self.fetch(base, "/downloads/ZATHROTH%20client.zip", {"Range": request})
+            self.assertEqual((status, body, headers["Content-Range"]), (206, expected, content_range), request)
+        self.assertEqual(self.fetch(base, "/downloads/ZATHROTH%20client.zip", {"Range": "bytes=abc"})[2], payload)
+        self.assertEqual(self.fetch(base, "/downloads/ZATHROTH%20client.zip", {"Range": "bytes=9999999-"})[0], 416)
+
+        for path in ("/downloads/notes.txt", "/downloads/linked.zip", "/downloads/missing.zip", "/downloads/..%2Foutside.zip",
+                     "/downloads/%2e%2e%2foutside.zip", "/downloads/../outside.zip", "/downloads/"):
+            self.assertEqual(self.fetch(base, path)[0], 404, path)
+
+    def test_only_a_few_downloads_run_at_once(self):
+        folder = Path(self.db_path).parent / "downloads"
+        folder.mkdir()
+        (folder / "big.zip").write_bytes(os.urandom(40_000_000))
+        server, base = self.second_server(downloads=folder)
+        port = server.server_port
+        readers = []
+        try:
+            for _ in range(account_server.MAX_DOWNLOADS_PER_ADDRESS):
+                connection = socket.create_connection(("127.0.0.1", port))
+                connection.sendall(b"GET /downloads/big.zip HTTP/1.0\r\n\r\n")
+                readers.append(connection)
+            time.sleep(1)  # the server is now blocked sending to readers that do not read
+            self.assertEqual(self.fetch(base, "/downloads/big.zip", {"Range": "bytes=0-9"})[0], 503)
+            self.assertEqual(Browser(base).request("/")[0], 200)  # logins and pages are unaffected
+        finally:
+            for connection in readers:
+                connection.close()
+        time.sleep(1)
+        self.assertEqual(self.fetch(base, "/downloads/big.zip", {"Range": "bytes=0-9"})[0], 206)
 
     def test_idle_and_slow_connections_are_cut_off(self):
         with mock.patch.object(account_server, "REQUEST_DEADLINE", 1):
