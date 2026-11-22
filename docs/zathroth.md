@@ -35,7 +35,7 @@ How this server is built, deployed and changed. Read it before editing.
 | HTTP login and browser account manager | `account_manager/` |
 | Start town Thais (first town named Thais, else lowest ID) | `account_manager.cpp`, `account_manager/storage.py` |
 | One-time move of all characters to Thais when the map changes | `data-otservbr-global/scripts/globalevents/zathroth_world_move.lua` (`server_config` key `zathroth_world`) |
-| Zathroth Trader, buys all NPC loot | `data-otservbr-global/npc/zathroth_trader.lua`, placed by `.../globalevents/zathroth_trader_spawn.lua` in 21 depots |
+| Zathroth Trader: buys and sells every item any NPC buys or sells (1,932 items, two-way prices that allow no profit loops; shop list is 91% of the 65,500-byte packet limit, so adding many more items needs a second trader) | `data-otservbr-global/npc/zathroth_trader.lua`, placed by `.../globalevents/zathroth_trader_spawn.lua` in 21 depots |
 | `/vipset [player]` god command: golden armor set, VIP sword, axe, spears, bow, crossbow, wand, rod, and a quiver of VIP arrows and bolts | `data/scripts/talkactions/god/vip_set.lua` |
 | VIP inferno arrows and thunder bolts explode over 9x9 tiles (burst arrows / power bolts with action ID 61530) | `data/scripts/lib/zathroth_vip.lua`, `data/scripts/weapons/scripts/burst_arrow.lua`, `power_bolt.lua` |
 | `/addbulkskills player levels` god command (all skills and magic level) | `data/scripts/talkactions/god/add_bulk_skills.lua` |
