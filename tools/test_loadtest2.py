@@ -1,6 +1,7 @@
 """Offline checks using the real SQLite schema; never connects to the game."""
 
 from contextlib import ExitStack
+from itertools import product
 import os
 from pathlib import Path
 import signal
@@ -94,6 +95,36 @@ class Loadtest2Tests(unittest.TestCase):
         with tool.database() as db:
             self.assertEqual(len(tool.owned_accounts(db)), 1)
 
+    def test_kept_characters_survive_later_runs_and_cleanup(self):
+        kept, _, _ = tool.create_accounts(2, threading.Event(), keep=True)
+        # This also simulates cleanup after a hard kill: no shutdown hook ran.
+        self.assertEqual(tool.remove_accounts(0), 0)
+        temporary, _, _ = tool.create_accounts(2, threading.Event())
+        self.assertTrue({b[1] for b in kept}.isdisjoint({b[1] for b in temporary}))
+        self.assertEqual(tool.remove_accounts(0), 2)
+        tool.main(["clean"])
+        with tool.database() as db:
+            rows = db.execute("SELECT id, comment FROM players WHERE account_id <> 1").fetchall()
+            self.assertEqual(set(rows), {(b[2], tool.KEPT_COMMENT) for b in kept})
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0], 3)
+            self.assertEqual(db.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_no_delete_spellings_and_default_dispatch(self):
+        for flags in ([], ["--no-delete"], ["-no-delete"], ["-no", "delete"]):
+            with self.subTest(flags=flags), patch.object(tool, "run") as run:
+                tool.main(["100", *flags])
+                self.assertEqual(run.call_args.args[0], 100)
+                self.assertEqual(run.call_args.kwargs, {"keep": bool(flags)})
+
+    def test_invalid_no_delete_option_does_not_touch_accounts(self):
+        for args in (["100", "-no", "wrong"], ["100", "-no"], ["clean", "--no-delete"]):
+            with self.subTest(args=args), patch.object(tool, "run") as run, patch.object(tool, "remove_accounts") as cleanup:
+                with patch("sys.stderr"), self.assertRaises(SystemExit) as error:
+                    tool.main(args)
+                self.assertEqual(error.exception.code, 2)
+                run.assert_not_called()
+                cleanup.assert_not_called()
+
     def test_cancelled_creation_rolls_back_and_lock_refuses_second_run(self):
         stop = threading.Event()
         stop.set()
@@ -172,12 +203,15 @@ class Loadtest2Tests(unittest.TestCase):
     def test_signals_logout_cleanup_and_keep_increased_record(self):
         # Socket pairs exercise the actual bot thread, ping/turn loop and logout.
         # Only the game handshake is replaced; SQL and OS signal handling are real.
-        for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-            with self.subTest(signal=signum):
+        for signum, flags in product((signal.SIGINT, signal.SIGTERM, signal.SIGHUP), ((), ("-no", "delete"))):
+            with self.subTest(signal=signum, flags=flags):
                 sent = []
                 peers = []
                 timers = []
                 before = signal.getsignal(signum)
+                with tool.database() as db:
+                    starting_players = db.execute("SELECT COUNT(*) FROM players").fetchone()[0]
+                    starting_accounts = db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
 
                 class FakeGameClient:
                     def __init__(self, session, name):
@@ -204,7 +238,7 @@ class Loadtest2Tests(unittest.TestCase):
                                                http_login=lambda account, password: {"session": {"sessionkey": "key"}})
                 try:
                     with patch.object(tool, "load_client", return_value=client), patch.object(tool, "game_usage", return_value="offline"):
-                        tool.main(["1"])
+                        tool.main(["1", *flags])
                 finally:
                     for timer in timers:
                         timer.cancel()
@@ -217,6 +251,9 @@ class Loadtest2Tests(unittest.TestCase):
                 self.assertIn(b"\x14", sent)
                 with tool.database() as db:
                     self.assertEqual(tool.owned_accounts(db), [])
+                    self.assertEqual(db.execute("SELECT COUNT(*) FROM players").fetchone()[0], starting_players + bool(flags))
+                    self.assertEqual(db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0], starting_accounts + bool(flags))
+                    self.assertEqual(db.execute("SELECT COUNT(*) FROM players_online").fetchone()[0], 0)
                     self.assertEqual(db.execute("SELECT value FROM server_config WHERE config = 'players_record'").fetchone()[0], "101")
 
 

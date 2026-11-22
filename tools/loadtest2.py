@@ -2,6 +2,8 @@
 """Keep 1-200 varied characters online until Ctrl+C.
 
     tools/loadtest2.sh 100
+    tools/loadtest2.sh 100 -no delete
+    tools/loadtest2.sh 100 --no-delete
     tools/loadtest2.sh clean
 
 Run on the server. Characters have ordinary two-part names, unique levels
@@ -10,11 +12,15 @@ main town's temple. Account names combine the character's first and last
 name. Existing names are skipped. Bots answer pings and turn once a minute
 to avoid the idle timeout. Logins respect the service's existing limits.
 
-Ctrl+C, SIGTERM and a closed SSH window log out and delete only this tool's
-tagged accounts/characters. A hard kill or reboot leaves accounts behind;
-the next run or 'clean' removes them once offline. Concurrent runs of this
-tool are refused. Do not run the original loadtest.sh at the same time: it
-restores the old record.
+By default, Ctrl+C, SIGTERM and a closed SSH window log out and delete only
+this tool's temporary accounts/characters. Add --no-delete (or -no delete)
+to log out but keep the accounts and characters permanently. Later runs and
+'clean' also preserve them. Each run creates new characters.
+
+A hard kill or reboot leaves accounts behind; the next run or 'clean'
+removes temporary accounts once offline, preserving --no-delete accounts.
+Concurrent runs of this tool are refused. Do not run the original
+loadtest.sh at the same time: it restores the old record.
 
 The game raises server_config.players_record normally. This tool never
 writes or restores that value, including during cleanup. Records include
@@ -41,6 +47,7 @@ DATABASE = ROOT / "database" / "zathroth.sqlite3"
 # Private ownership tags let cleanup recognize ordinary names safely.
 OWNER_EMAIL = "loadtest2@zathroth.invalid"
 OWNER_COMMENT = "Managed by tools/loadtest2.sh"
+KEPT_COMMENT = "Kept by tools/loadtest2.sh"
 PING_EVERY = 10
 TURN_EVERY = 60
 REPORT_EVERY = 60
@@ -75,6 +82,7 @@ def run_lock():
 
 
 def owned_accounts(db):
+    # Only temporary accounts qualify; kept characters have a distinct durable tag.
     # Both tags must match, and an account containing any untagged player is excluded.
     return [row[0] for row in db.execute(
         "SELECT a.id FROM accounts a WHERE a.email = ? "
@@ -119,7 +127,7 @@ def remove_accounts(wait_seconds=60):
     return removed
 
 
-def create_accounts(count, stop):
+def create_accounts(count, stop, *, keep=False):
     outfits = {sex: [] for sex in FIRST_NAMES}
     for outfit in ET.parse(ROOT / "data/XML/outfits.xml").getroot():
         if outfit.get("enabled", "yes") == "yes" and outfit.get("unlocked", "no") == "yes":
@@ -175,7 +183,7 @@ def create_accounts(count, stop):
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 100, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
                 (name, account_id, level, vocation_id, experience, health, health, mana, mana, capacity,
                  towns[index % len(towns)], sex, outfits[sex][(index // 2) % len(outfits[sex])],
-                 *(RANDOM.randrange(133) for _ in range(4)), OWNER_COMMENT),
+                 *(RANDOM.randrange(133) for _ in range(4)), KEPT_COMMENT if keep else OWNER_COMMENT),
             ).fetchone()[0]
             bots.append((account, name, player_id))
     return bots, password, len(towns)
@@ -262,7 +270,7 @@ def wait_online(bot, player_id, stop):
     raise ConnectionError(bot.error or "The game did not confirm this character online within 10 seconds")
 
 
-def run(count, stop):
+def run(count, stop, *, keep=False):
     leftovers = remove_accounts(wait_seconds=5)
     if leftovers:
         say(f"Removed {leftovers} leftover loadtest2 accounts.")
@@ -270,8 +278,11 @@ def run(count, stop):
     say(f"Server {client.HOST}: usage before the run: {game_usage()}")
     running = []
     try:
-        bots, password, towns = create_accounts(count, stop)
+        # Tag retained characters in the creation transaction, so even a hard kill
+        # cannot expose them to a later run's automatic cleanup.
+        bots, password, towns = create_accounts(count, stop, keep=keep)
         say(f"Created {count} characters across {min(count, towns)} of {towns} main towns, levels 8-1000, with varied outfits/colors.")
+        say("On exit: accounts and characters will be kept." if keep else "On exit: accounts and characters will be deleted.")
         say("Logging in: the account service allows 30 logins per address per minute. Ctrl+C stops the run at any time.")
         failures = []
         for account, name, player_id in bots:
@@ -320,14 +331,22 @@ def run(count, stop):
             bot.stop.set()
         for bot in running:
             bot.finish()
-        removed = remove_accounts()
-        say(f"Removed {removed} loadtest2 accounts/characters. Player record kept unchanged by cleanup.")
+        if keep:
+            say("Accounts and characters kept; future runs and 'clean' preserve them too. Player record kept.")
+        else:
+            removed = remove_accounts()
+            say(f"Removed {removed} loadtest2 accounts/characters. Player record kept unchanged by cleanup.")
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("bots", help=f"1-{MAX_BOTS}, or 'clean' to remove offline leftovers")
+    parser.add_argument("--no-delete", "-no-delete", action="store_true", help="Log out on exit but keep the created accounts and characters permanently")
+    parser.add_argument("-no", choices=("delete",), help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    keep = args.no_delete or args.no == "delete"
+    if args.bots == "clean" and keep:
+        parser.error("The no-delete option is for a bot run; 'clean' already preserves kept accounts.")
     if args.bots != "clean":
         try:
             count = int(args.bots)
@@ -347,7 +366,7 @@ def main(argv=None):
             if args.bots == "clean":
                 say(f"Removed {remove_accounts(wait_seconds=5)} offline loadtest2 accounts. Player record kept.")
             else:
-                run(count, stop)
+                run(count, stop, keep=keep)
     except InterruptedError:
         say("Stopped.")
     except (OSError, RuntimeError, sqlite3.Error) as error:
