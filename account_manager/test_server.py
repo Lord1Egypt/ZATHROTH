@@ -398,6 +398,15 @@ class AccountManagerTest(unittest.TestCase):
                      "/downloads/%2e%2e%2foutside.zip", "/downloads/../outside.zip", "/downloads/"):
             self.assertEqual(self.fetch(base, path)[0], 404, path)
 
+    def test_client_link_is_shown_and_unsafe_ones_are_ignored(self):
+        server, base = self.second_server(client_url="https://example.com/a/ZATHROTH-client.zip?x=1&y=2")
+        page = Browser(base).request("/")[1]
+        self.assertIn('href="https://example.com/a/ZATHROTH-client.zip?x=1&amp;y=2"', page)
+        self.assertIn("Download the game client", page)
+        for unsafe in ("javascript:alert(1)", 'https://x.test/"onmouseover="1', "ftp://example.com/a.zip", ""):
+            server, base = self.second_server(client_url=unsafe)
+            self.assertNotIn("Download the game client", Browser(base).request("/")[1], unsafe)
+
     def test_only_a_few_downloads_run_at_once(self):
         folder = Path(self.db_path).parent / "downloads"
         folder.mkdir()

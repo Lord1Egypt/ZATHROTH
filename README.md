@@ -81,7 +81,7 @@ The account service trusts the `X-Forwarded-For` and `X-Forwarded-Proto` headers
 
 ## Client downloads
 
-Put client packages (`.zip`, `.7z`, `.rar`, `.exe` or `.msi`) in the `downloads/` folder of the clone. The account manager lists them on its pages with their size and serves them from `http://<host>:8088/downloads/<file>`, with resumable downloads. At most 4 downloads run at once (2 per address), so players cannot slow the logins down. The folder is not part of Git or the Docker image. `python3 tools/package_client.py <client folder> downloads/ZATHROTH-client.zip` makes a package from a client folder.
+Put client packages (`.zip`, `.7z`, `.rar`, `.exe` or `.msi`) in the `downloads/` folder of the clone. The account manager lists them on its pages with their size and serves them from `http://<host>:8088/downloads/<file>`, with resumable downloads. At most 4 downloads run at once (2 per address), so players cannot slow the logins down. The folder is not part of Git or the Docker image. To offer a download hosted elsewhere instead, set `ZATHROTH_CLIENT_URL=https://...` in `.env`; the page then shows that link (only `http://` and `https://` addresses are accepted). `python3 tools/package_client.py <client folder> downloads/ZATHROTH-client.zip` makes a package from a client folder.
 
 ## Security
 

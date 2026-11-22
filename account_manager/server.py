@@ -81,7 +81,7 @@ def client_events():
 
 
 class AccountServer(ThreadingHTTPServer):
-    def __init__(self, address, accounts, game_host, game_port, captcha=True, trusted_proxy="", lan_host="", downloads=None):
+    def __init__(self, address, accounts, game_host, game_port, captcha=True, trusted_proxy="", lan_host="", downloads=None, client_url=""):
         super().__init__(address, AccountHandler)
         self.accounts = accounts
         self.captcha_enabled = captcha
@@ -112,6 +112,7 @@ class AccountServer(ThreadingHTTPServer):
         }
         self.secret = secrets.token_bytes(32)
         self.connections = BoundedSemaphore(MAX_CONNECTIONS)
+        self.client_url = client_url if re.fullmatch(r"https?://[^\s\"'<>]+", client_url) else ""
         self.downloads_dir = Path(downloads) if downloads else ROOT / "downloads"
         self.downloading = BoundedSemaphore(MAX_DOWNLOADS)
         self.downloads_by_address = {}
@@ -285,13 +286,14 @@ class AccountHandler(BaseHTTPRequestHandler):
         return raw.decode("utf-8")
 
     def downloads_section(self):
-        files = self.server.available_downloads()
-        if not files:
-            return ""
         items = "".join(
             f'<li><div><a href="/downloads/{quote(name)}">{escape(name)}</a><br>{size / 1048576:,.0f} MB</div></li>'
-            for name, size in files
+            for name, size in self.server.available_downloads()
         )
+        if self.server.client_url:
+            items = f'<li><div><a href="{escape(self.server.client_url)}" rel="noopener">Download ZATHROTH-client.zip</a></div></li>' + items
+        if not items:
+            return ""
         return f"<section><h2>Download the game client</h2><ul>{items}</ul></section>"
 
     def send_page(self, body, *, message="", status=HTTPStatus.OK, cookie=None):
@@ -697,6 +699,7 @@ def main():
         captcha=os.environ.get("ZATHROTH_CAPTCHA", "on").lower() != "off",
         trusted_proxy=os.environ.get("ZATHROTH_TRUSTED_PROXY", ""),
         lan_host=os.environ.get("ZATHROTH_LAN_IP", ""),
+        client_url=os.environ.get("ZATHROTH_CLIENT_URL", ""),
     )
     with server:
         print(f"ZATHROTH Account Manager and game login listening on port {port}", flush=True)
