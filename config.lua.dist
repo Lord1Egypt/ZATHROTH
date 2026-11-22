@@ -474,7 +474,8 @@ toggleLearnSpells = false
 emoteSpells = false
 allowWalkthrough = true
 coinPacketSize = 25
-coinImagesURL = "http://127.0.0.1/images/store/"
+-- Store icons are served by the account service (store-images/ in the repository).
+coinImagesURL = "http://" .. (os.getenv("ZATHROTH_SERVER_IP") or "127.0.0.1") .. ":" .. (os.getenv("ZATHROTH_ACCOUNT_PORT") or "8088") .. "/images/store/"
 classicAttackSpeed = false
 showScriptsLogInConsole = false
 luaStartupLoadTelemetry = false

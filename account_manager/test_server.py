@@ -398,6 +398,24 @@ class AccountManagerTest(unittest.TestCase):
                      "/downloads/%2e%2e%2foutside.zip", "/downloads/../outside.zip", "/downloads/"):
             self.assertEqual(self.fetch(base, path)[0], 404, path)
 
+    def test_store_icons_are_served_and_only_from_the_icon_folders(self):
+        folder = Path(self.db_path).parent / "icons"
+        (folder / "64").mkdir(parents=True)
+        (folder / "13").mkdir()
+        (folder / "64" / "XP_Boost.png").write_bytes(b"\x89PNG-product")
+        (folder / "13" / "Category_Boosts.png").write_bytes(b"\x89PNG-category")
+        (folder / "64" / "linked.png").symlink_to(self.db_path)
+        (folder / "secret.png").write_bytes(b"secret")
+        server, base = self.second_server(store_images=folder)
+        status, headers, body = self.fetch(base, "/images/store/64/XP_Boost.png")
+        self.assertEqual((status, body, headers["Content-Type"]), (200, b"\x89PNG-product", "image/png"))
+        self.assertIn("max-age", headers["Cache-Control"])
+        self.assertEqual(self.fetch(base, "/images/store/13/Category_Boosts.png")[2], b"\x89PNG-category")
+        for path in ("/images/store/64/linked.png", "/images/store/64/missing.png", "/images/store/32/XP_Boost.png",
+                     "/images/store/64/../secret.png", "/images/store/64/..%2fsecret.png", "/images/store/secret.png",
+                     "/images/store/64/XP_Boost.png/extra", "/images/store/64/"):
+            self.assertEqual(self.fetch(base, path)[0], 404, path)
+
     def test_client_link_is_shown_and_unsafe_ones_are_ignored(self):
         server, base = self.second_server(client_url="https://example.com/a/ZATHROTH-client.zip?x=1&y=2")
         page = Browser(base).request("/")[1]

@@ -37,6 +37,7 @@ REQUEST_DEADLINE = 30
 BLOCKED_MESSAGE = "Too many failed attempts. Try again in a few minutes."
 # Game client packages offered for download: the files in <repository>/downloads.
 DOWNLOAD_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._ -]{0,100}\.(?:zip|7z|rar|exe|msi)")
+STORE_IMAGE = re.compile(r"/images/store/(13|64)/([A-Za-z0-9_.-]+\.png)")
 MAX_DOWNLOADS = 4
 MAX_DOWNLOADS_PER_ADDRESS = 2
 # A download may take as long as the visitor needs, but a visitor that stops
@@ -81,7 +82,7 @@ def client_events():
 
 
 class AccountServer(ThreadingHTTPServer):
-    def __init__(self, address, accounts, game_host, game_port, captcha=True, trusted_proxy="", lan_host="", downloads=None, client_url=""):
+    def __init__(self, address, accounts, game_host, game_port, captcha=True, trusted_proxy="", lan_host="", downloads=None, client_url="", store_images=None):
         super().__init__(address, AccountHandler)
         self.accounts = accounts
         self.captcha_enabled = captcha
@@ -113,6 +114,7 @@ class AccountServer(ThreadingHTTPServer):
         self.secret = secrets.token_bytes(32)
         self.connections = BoundedSemaphore(MAX_CONNECTIONS)
         self.client_url = client_url if re.fullmatch(r"https?://[^\s\"'<>]+", client_url) else ""
+        self.store_images = Path(store_images) if store_images else ROOT / "store-images"
         self.downloads_dir = Path(downloads) if downloads else ROOT / "downloads"
         self.downloading = BoundedSemaphore(MAX_DOWNLOADS)
         self.downloads_by_address = {}
@@ -254,11 +256,11 @@ class AccountHandler(BaseHTTPRequestHandler):
     def address_string(self):
         return self.address
 
-    def respond(self, status, mime, body, cookie=None):
+    def respond(self, status, mime, body, cookie=None, cache="no-store"):
         self.send_response(status)
         self.send_header("Content-Type", mime)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache)
         self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -437,6 +439,8 @@ class AccountHandler(BaseHTTPRequestHandler):
                 self.browser_page(self.session())
             elif self.path.startswith("/downloads/"):
                 self.send_download()
+            elif self.path.startswith("/images/store/"):
+                self.send_store_image()
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
         except sqlite3.Error:
@@ -444,6 +448,15 @@ class AccountHandler(BaseHTTPRequestHandler):
                 self.json_response({"ready": False}, HTTPStatus.SERVICE_UNAVAILABLE)
             else:
                 self.send_page("", message="The game database is starting. Try again shortly.", status=HTTPStatus.SERVICE_UNAVAILABLE)
+
+    def send_store_image(self):
+        """Shop icons for the game client: /images/store/<13 or 64>/<name>.png."""
+        found = STORE_IMAGE.fullmatch(self.path.split("?", 1)[0])
+        path = self.server.store_images / found[1] / found[2] if found else None
+        if not path or path.is_symlink() or not path.is_file():
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        self.respond(HTTPStatus.OK, "image/png", path.read_bytes(), cache="public, max-age=86400")
 
     def send_download(self):
         name = unquote(self.path[len("/downloads/"):].split("?", 1)[0])
