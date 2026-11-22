@@ -322,6 +322,25 @@ class AccountManagerTest(unittest.TestCase):
         self.assertEqual(address({"X-Forwarded-For": "192.168.1.50"}), "192.168.1.104")
         self.assertEqual(address({}), "192.168.1.104")
 
+    def test_a_proxy_host_name_is_resolved_in_the_background(self):
+        server, _ = self.second_server(trusted_proxy="localhost")
+        for _ in range(50):
+            if server.proxy_addresses:
+                break
+            time.sleep(0.1)
+        self.assertEqual(server.proxy_addresses, {"127.0.0.1"})
+        self.assertTrue(server.is_trusted_proxy("127.0.0.1"))
+        self.assertFalse(server.is_trusted_proxy("203.0.113.5"))
+
+    def test_a_proxy_name_that_does_not_resolve_never_slows_requests(self):
+        self.game_startup()
+        # The lookup of this name runs in the background; requests do not wait for it.
+        server, base = self.second_server(trusted_proxy="proxy.invalid")
+        started = time.monotonic()
+        self.assertEqual(Browser(base).request("/")[0], 200)
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertFalse(server.is_trusted_proxy("127.0.0.1"))
+
     def test_forwarded_headers_from_anyone_else_are_ignored(self):
         self.game_startup()
         self.register(self.browser, "adventurer", "adventurer@example.test")

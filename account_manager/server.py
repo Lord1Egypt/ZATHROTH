@@ -14,7 +14,7 @@ from pathlib import Path
 import secrets
 import socket
 import sqlite3
-from threading import BoundedSemaphore, Lock, Timer
+from threading import BoundedSemaphore, Lock, Thread, Timer
 import time
 from urllib.parse import parse_qs
 
@@ -84,9 +84,14 @@ class AccountServer(ThreadingHTTPServer):
         # Clients on the home network get this game address instead of
         # game_host: a router often cannot loop back to its own public address.
         self.lan_host = lan_host
-        self.proxy_lock = Lock()
-        self.proxy_addresses = set()
-        self.proxy_refresh = 0
+        self.proxy_addresses = frozenset()
+        if trusted_proxy:
+            try:
+                self.proxy_addresses = frozenset([str(ipaddress.ip_address(trusted_proxy))])
+            except ValueError:
+                # A host name: the lookup of a name that does not exist can take
+                # many seconds, so it never runs inside a request.
+                Thread(target=self.watch_proxy, daemon=True).start()
         self.captchas = Captchas()
         self.guard = AuthGuard()
         self.active = {}
@@ -131,18 +136,17 @@ class AccountServer(ThreadingHTTPServer):
                 return {**self.world, "externaladdressprotected": self.lan_host, "externaladdressunprotected": self.lan_host}
         return self.world
 
+    def watch_proxy(self):
+        """Keeps the proxy's current addresses up to date; its container may start later or get a new address."""
+        while True:
+            try:
+                self.proxy_addresses = frozenset(info[4][0] for info in socket.getaddrinfo(self.trusted_proxy, None, socket.AF_INET))
+            except OSError:
+                self.proxy_addresses = frozenset()
+            time.sleep(30)
+
     def is_trusted_proxy(self, address):
-        if not self.trusted_proxy:
-            return False
-        now = time.monotonic()
-        with self.proxy_lock:
-            if now >= self.proxy_refresh:
-                try:
-                    self.proxy_addresses = {info[4][0] for info in socket.getaddrinfo(self.trusted_proxy, None, socket.AF_INET)}
-                except OSError:
-                    self.proxy_addresses = set()
-                self.proxy_refresh = now + 30
-            return address in self.proxy_addresses
+        return address in self.proxy_addresses
 
     def take_slot(self, address):
         if not self.connections.acquire(blocking=False):
