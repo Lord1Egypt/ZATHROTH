@@ -5,6 +5,11 @@ Run from the repository root: python3 tools/generate_trader_prices.py --write
 Without --write it only prints the item count and the shop packet size.
 """
 import re, glob, sys
+
+# The trader pays this many times the best NPC price for loot, so players get rich quickly.
+LOOT_MULTIPLIER = 30
+# Shop prices are 32-bit in the engine.
+MAX_PRICE = 4_000_000_000
 pat = re.compile(r'\{\s*itemName\s*=\s*"([^"]+)"\s*,\s*clientId\s*=\s*(\d+)\s*,([^}]*)\}')
 sources = sorted(f for f in glob.glob("data-otservbr-global/npc/*.lua") if not f.endswith("zathroth_trader.lua")) + ["data/scripts/lib/shops.lua"]
 names, plain = {}, set()
@@ -21,10 +26,11 @@ rows = []
 for cid in sorted(plain, key=lambda c: (names[c].lower(), c)):
     pay, cost = max_pay.get(cid, 0), min_cost.get(cid, 0)
     if pay and cost:
-        sell = min(pay, cost)                 # never pays more than the cheapest NPC charges
-        buy = max(cost, pay)                  # never charges less than the best NPC pays
+        sell = min(pay * LOOT_MULTIPLIER, cost)   # never pays more than the cheapest NPC charges
+        buy = max(cost, pay)                      # normal NPC price, never less than the best NPC pays
     elif pay:
-        sell, buy = pay, max(pay * 2, pay + 1)
+        sell = min(pay * LOOT_MULTIPLIER, MAX_PRICE // 2)
+        buy = max(sell * 2, sell + 1)             # sold at double what he pays, so no buy-and-resell profit
     else:
         sell, buy = max(1, cost // 4), cost
     assert sell <= buy and buy >= pay and (not cost or sell <= cost)
