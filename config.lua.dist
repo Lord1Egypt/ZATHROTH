@@ -36,7 +36,7 @@ protectionLevel = 7
 pzLocked = 60 * 1000
 removeChargesFromRunes = true
 removeChargesFromPotions = true
-removeWeaponAmmunition = true
+removeWeaponAmmunition = false
 removeWeaponCharges = true
 removeBeginningWeaponAmmunition = true
 refundBeginningWeaponMana = false
@@ -581,7 +581,7 @@ rateSoulRegenSpeed = 1.0
 
 rateSpellCooldown = 1.0
 rateAttackSpeed = 1.0
-rateOfflineTrainingSpeed = rateAttackSpeed
+rateOfflineTrainingSpeed = 10
 rateExerciseTrainingSpeed = rateAttackSpeed
 
 -- Monster rates

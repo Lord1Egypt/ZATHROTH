@@ -1,9 +1,9 @@
 -- Server-wide multipliers set by /setatkspeed, /spawn <number>, /lootrate
 -- and /exprate.
 -- They are saved in the KV store and restored when the server starts
--- (data/scripts/globalevents/zathroth_rates.lua). 1 means normal.
-ZATHROTH_LOOT_RATE = 1
-ZATHROTH_EXP_RATE = 1
+-- (data/scripts/globalevents/zathroth_rates.lua). Loot and experience start at 10x; 1 means normal.
+ZATHROTH_LOOT_RATE = 10
+ZATHROTH_EXP_RATE = 10
 ZATHROTH_MAX_RATE = 1000
 
 ZATHROTH_RATES = {
