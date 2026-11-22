@@ -8,7 +8,12 @@ account (loadtest-001, ...) and a character clearly named "Loadtest Aa",
 "Loadtest Ab", ... spread over the main towns and the five start vocations.
 The bots log in through the real HTTP login and game handshake, answer the
 server's ping, stay for <seconds>, log out, and every test account is deleted
-afterwards (also after Ctrl+C or an error). Limits: 1-200 bots, 10-900 seconds.
+afterwards (also after Ctrl+C, an error or a closed SSH window). Limits:
+1-200 bots, 10-900 seconds. The player record the bots raise is put back in
+the database (the running game keeps reporting the raised peak until it
+restarts), and the in-game "New record" message is not broadcast for them.
+
+    tools/loadtest.sh clean                   removes test accounts left by a run that was killed
 
 While a test runs the bots count as online players, also for server lists.
 """
@@ -162,14 +167,53 @@ def game_usage():
         return "not available"
 
 
+def say(*parts):
+    """Prints, but never fails: after the SSH window closes the cleanup must still run."""
+    try:
+        print(*parts, flush=True)
+    except OSError:
+        pass
+
+
 def interrupted(signum, frame):
     raise KeyboardInterrupt
 
 
+def login(client, account, password):
+    """HTTP login; waits out the service's limit of 30 logins per address per minute."""
+    deadline = time.monotonic() + 90
+    while True:
+        reply = client.http_login(account, password)
+        if "session" in reply:
+            return reply["session"]["sessionkey"]
+        message = reply.get("errorMessage", "no session in the reply")
+        if "Too many attempts" not in message or time.monotonic() > deadline:
+            raise RuntimeError(message)
+        time.sleep(5)
+
+
+def players_record():
+    with connect() as db:
+        row = db.execute("SELECT value FROM server_config WHERE config = 'players_record'").fetchone()
+    return int(row[0]) if row else None
+
+
+def restore_players_record(saved):
+    """Puts back the record the bots raised; the game reloads it from here when it restarts."""
+    if saved is None:
+        return
+    with connect() as db:
+        db.execute("UPDATE server_config SET value = ? WHERE config = 'players_record' AND CAST(value AS INTEGER) > ?", (str(saved), saved))
+
+
 def main():
-    # Ctrl+C and kill stop the test early, even when the shell started this with SIGINT ignored.
-    signal.signal(signal.SIGINT, interrupted)
-    signal.signal(signal.SIGTERM, interrupted)
+    # Ctrl+C, kill and closing the SSH window all stop the test early and still clean up,
+    # even when the shell started this with SIGINT ignored.
+    for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(number, interrupted)
+    if sys.argv[1:] == ["clean"]:
+        say(f"Removed {remove_test_accounts(wait_seconds=5)} test accounts.")
+        return
     if len(sys.argv) != 3 or not all(arg.isdigit() for arg in sys.argv[1:]):
         raise SystemExit(__doc__)
     count, seconds = int(sys.argv[1]), int(sys.argv[2])
@@ -180,51 +224,62 @@ def main():
 
     leftovers = remove_test_accounts(wait_seconds=5)
     if leftovers:
-        print(f"Removed {leftovers} test accounts left from an earlier run.")
+        say(f"Removed {leftovers} test accounts left from an earlier run.")
+    record = players_record()
     client = load_client()
-    print(f"Server {client.HOST}: usage before the test: {game_usage()}")
+    say(f"Server {client.HOST}: usage before the test: {game_usage()}")
     bots, password, town_count = create_test_accounts(count)
-    print(f"Created {count} test accounts in {town_count} towns. Logging in (about {count * 0.6:.0f} s, the server limits connections per address)...")
+    say(f"Created {count} test accounts in {town_count} towns. Logging in: the login service allows 30 logins "
+        f"per address per minute, so this takes about {max(count * 0.6, (count - 1) // 30 * 60):.0f} s...")
 
     stop = threading.Event()
     running, failures, times = [], [], []
     try:
         for account, name in bots:
             started = time.monotonic()
-            try:
-                session = client.http_login(account, password)["session"]["sessionkey"]
-                bot = Bot(client, session, name, stop)
-                bot.start()
-                running.append(bot)
-                times.append(time.monotonic() - started)
-            except Exception as error:  # report every failed login and keep going
-                failures.append(f"{name}: {error}")
+            for attempt in range(3):
+                try:
+                    bot = Bot(client, login(client, account, password), name, stop)
+                    bot.start()
+                    running.append(bot)
+                    times.append(time.monotonic() - started)
+                    break
+                except (OSError, ConnectionError) as error:
+                    # The game briefly refuses an address that connects very often; try again.
+                    if attempt == 2:
+                        failures.append(f"{name}: {error}")
+                    time.sleep(4)
+                except Exception as error:  # report every other failed login and keep going
+                    failures.append(f"{name}: {error}")
+                    break
         if times:
-            print(f"{len(running)} of {count} bots online. Login time: average {sum(times) / len(times):.2f} s, slowest {max(times):.2f} s.")
+            say(f"{len(running)} of {count} bots online. Login time: average {sum(times) / len(times):.2f} s, slowest {max(times):.2f} s (including waits for the login limit).")
         for failure in failures[:10]:
-            print("  login failed:", failure)
+            say("  login failed:", failure)
 
         end = time.monotonic() + seconds
         halfway_reported = False
         while time.monotonic() < end:
             time.sleep(1)
             if not halfway_reported and time.monotonic() > end - seconds / 2:
-                print(f"Halfway, {sum(bot.is_alive() for bot in running)} bots connected. Server usage: {game_usage()}")
+                say(f"Halfway, {sum(bot.is_alive() for bot in running)} bots connected. Server usage: {game_usage()}")
                 halfway_reported = True
         dropped = [bot for bot in running if bot.error]
-        print(f"Time is up: {len(running) - len(dropped)} of {len(running)} bots stayed connected for {seconds} s.")
+        say(f"Time is up: {len(running) - len(dropped)} of {len(running)} bots stayed connected for {seconds} s.")
         for bot in dropped[:10]:
-            print(f"  {bot.name_} dropped: {bot.error}")
+            say(f"  {bot.name_} dropped: {bot.error}")
     except KeyboardInterrupt:
-        print("Stopped early.")
+        say("Stopped early.")
     finally:
         # The cleanup must finish, so a second Ctrl+C cannot cut it short.
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            signal.signal(number, signal.SIG_IGN)
         stop.set()
         for bot in running:
             bot.join(timeout=5)
-        print(f"Logging out and removing the test accounts... removed {remove_test_accounts()}.")
+        removed = remove_test_accounts()
+        restore_players_record(record)
+        say(f"Logged out and removed {removed} test accounts. Player record restored to {record}.")
 
 
 if __name__ == "__main__":
