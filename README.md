@@ -64,13 +64,14 @@ The `https` profile adds a Caddy container that serves the account service over 
 ```dotenv
 ZATHROTH_DOMAIN=yourname.ddns.net
 ZATHROTH_SERVER_IP=yourname.ddns.net
+ZATHROTH_BIND_IP=192.168.1.104
 ZATHROTH_LAN_IP=192.168.1.104
 COMPOSE_PROFILES=https
 # First run only: a test certificate, so a mistake does not use up Let's Encrypt's real limits.
 ZATHROTH_ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
 ```
 
-`ZATHROTH_SERVER_IP` is the game address sent to players on the internet. Players on your home network are sent `ZATHROTH_LAN_IP` instead, because many routers cannot connect to their own public address.
+`ZATHROTH_SERVER_IP` is the game address sent to players on the internet. `ZATHROTH_BIND_IP` must then be the server's own LAN address, since the ports cannot be bound to a host name. Players on your home network are sent `ZATHROTH_LAN_IP` instead, because many routers cannot connect to their own public address.
 
 3. Run `./up.sh`. When the log shows the test certificate was obtained (`docker compose logs proxy`), delete the `ZATHROTH_ACME_CA` line and run `./up.sh` again for the real one. Players open `https://yourname.ddns.net/` in a browser, and a client that supports HTTPS logins uses `https://yourname.ddns.net/login`.
 
