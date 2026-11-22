@@ -10,9 +10,12 @@ import re, glob, sys
 LOOT_MULTIPLIER = 30
 # Shop prices are 32-bit in the engine.
 MAX_PRICE = 4_000_000_000
-pat = re.compile(r'\{\s*itemName\s*=\s*"([^"]+)"\s*,\s*clientId\s*=\s*(\d+)\s*,([^}]*)\}')
+# The engine (data/scripts/lib/register_npc_type.lua) accepts itemName/itemname and clientId/clientid.
+pat = re.compile(r'\{\s*item[Nn]ame\s*=\s*"([^"]+)"\s*,\s*client[Ii]d\s*=\s*(\d+)\s*,([^}]*)\}')
 sources = sorted(f for f in glob.glob("data-otservbr-global/npc/*.lua") if not f.endswith("zathroth_trader.lua")) + ["data/scripts/lib/shops.lua"]
 names, plain = {}, set()
+standard_pat = re.compile(r'\{\s*itemName\s*=\s*"[^"]+"\s*,\s*clientId\s*=\s*(\d+)')
+standard_ids = {int(c) for f in sources for c in standard_pat.findall(open(f, encoding="utf-8", errors="replace").read())}
 max_pay, min_cost = {}, {}          # bounds from every NPC entry, including quest, charge and library shops
 for f in sources:
     for name, cid, rest in pat.findall(open(f, encoding="utf-8", errors="replace").read()):
@@ -20,8 +23,11 @@ for f in sources:
         b = re.search(r'\bbuy\s*=\s*(\d+)', rest); s = re.search(r'\bsell\s*=\s*(\d+)', rest)
         if b and int(b[1]) > 0: min_cost[cid] = min(min_cost.get(cid, 1 << 62), int(b[1]))
         if s and int(s[1]) > 0: max_pay[cid] = max(max_pay.get(cid, 0), int(s[1]))
-        if not (set(re.findall(r'(\w+)\s*=', rest)) - {"buy", "sell"}) and (b or s):
-            plain.add(cid)           # only entries without charges or conditions are offered
+        # Only entries without charges or conditions are offered. Entries written with lowercase
+        # keys (itemname/clientid) only bound the prices: offering them too would push the shop
+        # past the 65,500-byte packet limit.
+        if not (set(re.findall(r'(\w+)\s*=', rest)) - {"buy", "sell"}) and (b or s) and cid in standard_ids:
+            plain.add(cid)
 rows = []
 for cid in sorted(plain, key=lambda c: (names[c].lower(), c)):
     pay, cost = max_pay.get(cid, 0), min_cost.get(cid, 0)
