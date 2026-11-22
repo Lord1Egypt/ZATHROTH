@@ -54,7 +54,7 @@ All three ports use TCP.
 | 7171 | Game server status and protocol login listener |
 | 7172 | Game connection |
 
-## HTTPS
+## HTTPS (optional)
 
 The `https` profile adds a Caddy container that serves the account service over HTTPS on ports 80 and 443. It gets a Let's Encrypt certificate for your host name by itself and renews it.
 
@@ -81,7 +81,7 @@ The account service trusts the `X-Forwarded-For` and `X-Forwarded-Proto` headers
 
 ## Security
 
-Over plain HTTP (port 8088), passwords and game session keys are not encrypted on the way. Use the HTTPS profile above before inviting players you do not know.
+Over plain HTTP (port 8088), passwords and game session keys are not encrypted on the way. The HTTPS profile above protects the website only: the game client keeps logging in over HTTP on port 8088 unless it supports `https://` login addresses. It is off by default.
 
 The account service and the in-game Account Manager limit abuse:
 

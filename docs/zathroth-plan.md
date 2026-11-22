@@ -7,14 +7,17 @@ step starts only when the one before it is done and verified.
 
 Status (2026-11-22): host name `zathroth.servegame.com` is kept current by the
 No-IP updater (systemd service `noip-duc` on the phone) and resolves to the
-phone's public address. The phone's `.env` sets the host name, the HTTPS
-profile and Let's Encrypt's staging CA. Let's Encrypt could not reach ports 80
-or 443 from the internet ("Timeout during connect"), while both answer on the
-home network. Open: find out whether the router forwards are active, the
-router's WAN address equals the public address the phone sees (CGNAT), or the
-ISP blocks inbound 80/443; test 8088 from mobile data. When 80/443 are
-reachable, Caddy gets the staging certificate by itself; then remove
-`ZATHROTH_ACME_CA` from `.env` and run `docker compose up -d` for the real one.
+phone's public address. The phone's `.env` sets `ZATHROTH_SERVER_IP` to the
+host name and `ZATHROTH_LAN_IP` to the LAN address (home-network clients get
+the LAN address, everyone else the host name). Still to verify from outside
+the home network: ports 8088, 7171 and 7172 (open `http://zathroth.servegame.com:8088/`
+on mobile data, then log in with the client).
+
+HTTPS decision: skipped for now. Let's Encrypt could not reach ports 80 or 443
+from the internet (both answer on the home network), and the game client logs
+in over plain HTTP on 8088 anyway, so HTTPS would only protect the website.
+The Caddy `https` compose profile stays in the repo, off by default; the
+owner may remove the 80 and 443 forwards from the router.
 
 - Router: forward TCP 7171, 7172 and 8088 to the phone (`192.168.1.104`) and
   reserve that address for the phone in the router's DHCP settings.
@@ -60,12 +63,15 @@ verified, a lost password needs a god to reset it).
 
 ## 4. Client
 
+Decision (2026-11-22): no OTClient v8. We keep the normal client already in
+use (OTClient Redemption with 15.25 assets, `httpLogin`).
+
 - Edit the client's login background picture with ZATHROTH artwork.
-- The owner collects OTClient v8 builds from other servers; test which one
-  works with ZATHROTH (protocol 15.25 over HTTP login). Players prefer OTClient
-  v8 because of its built-in bot.
-- Rebrand the chosen client (name, logo, server list entry, login URL) and
-  check its licence allows redistribution.
+- Rebrand it (window title, logo, server list entry with the login URL
+  `http://zathroth.servegame.com:8088/login`, protocol 1525) and check its
+  licence allows redistribution.
+- The client's files are on the owner's Windows PC; edit copies of them and
+  keep the originals.
 
 ## 5. Client downloads in the browser account manager
 
