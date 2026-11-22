@@ -5,6 +5,17 @@ step starts only when the one before it is done and verified.
 
 ## 1. Open the server to the internet
 
+Status (2026-11-22): host name `zathroth.servegame.com` is kept current by the
+No-IP updater (systemd service `noip-duc` on the phone) and resolves to the
+phone's public address. The phone's `.env` sets the host name, the HTTPS
+profile and Let's Encrypt's staging CA. Let's Encrypt could not reach ports 80
+or 443 from the internet ("Timeout during connect"), while both answer on the
+home network. Open: find out whether the router forwards are active, the
+router's WAN address equals the public address the phone sees (CGNAT), or the
+ISP blocks inbound 80/443; test 8088 from mobile data. When 80/443 are
+reachable, Caddy gets the staging certificate by itself; then remove
+`ZATHROTH_ACME_CA` from `.env` and run `docker compose up -d` for the real one.
+
 - Router: forward TCP 7171, 7172 and 8088 to the phone (`192.168.1.104`) and
   reserve that address for the phone in the router's DHCP settings.
 - No-IP hostname kept current by the No-IP updater (on the router or another
