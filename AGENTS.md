@@ -52,4 +52,4 @@ The global Git, commit, PR, C++ header, exception, and documentation policies ap
 
 ## ZATHROTH
 
-This repository is ZATHROTH, a Canary fork running SQLite on the owner's ARM64 server. Read `docs/zathroth.md` before changing anything: it covers deployment, the change workflow, local testing and where every ZATHROTH addition lives.
+This repository is ZATHROTH, a Canary fork running SQLite on the owner's ARM64 server. Read `docs/zathroth.md` before changing anything: it covers deployment, the change workflow, local testing and where every ZATHROTH addition lives. The agreed next steps are in `docs/zathroth-plan.md`.
