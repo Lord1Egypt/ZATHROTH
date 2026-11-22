@@ -7,6 +7,7 @@ from html import escape
 from http import HTTPStatus
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -72,10 +73,17 @@ def client_events():
 
 
 class AccountServer(ThreadingHTTPServer):
-    def __init__(self, address, accounts, game_host, game_port, captcha=True):
+    def __init__(self, address, accounts, game_host, game_port, captcha=True, trusted_proxy=""):
         super().__init__(address, AccountHandler)
         self.accounts = accounts
         self.captcha_enabled = captcha
+        # Host name or address of the HTTPS reverse proxy in front of this
+        # service. Only it may say, through X-Forwarded-For and -Proto, who the
+        # real visitor is and whether they used HTTPS.
+        self.trusted_proxy = trusted_proxy
+        self.proxy_lock = Lock()
+        self.proxy_addresses = set()
+        self.proxy_refresh = 0
         self.captchas = Captchas()
         self.guard = AuthGuard()
         self.active = {}
@@ -110,11 +118,25 @@ class AccountServer(ThreadingHTTPServer):
             self.rate_counts[address] = count + 1
             return True
 
+    def is_trusted_proxy(self, address):
+        if not self.trusted_proxy:
+            return False
+        now = time.monotonic()
+        with self.proxy_lock:
+            if now >= self.proxy_refresh:
+                try:
+                    self.proxy_addresses = {info[4][0] for info in socket.getaddrinfo(self.trusted_proxy, None, socket.AF_INET)}
+                except OSError:
+                    self.proxy_addresses = set()
+                self.proxy_refresh = now + 30
+            return address in self.proxy_addresses
+
     def take_slot(self, address):
         if not self.connections.acquire(blocking=False):
             return False
         with self.rate_lock:
-            if self.active.get(address, 0) >= MAX_CONNECTIONS_PER_IP:
+            # The proxy carries many visitors over a few connections.
+            if self.active.get(address, 0) >= MAX_CONNECTIONS_PER_IP and not self.is_trusted_proxy(address):
                 self.connections.release()
                 return False
             self.active[address] = self.active.get(address, 0) + 1
@@ -164,6 +186,28 @@ class AccountHandler(BaseHTTPRequestHandler):
     @property
     def accounts(self):
         return self.server.accounts
+
+    @property
+    def behind_proxy(self):
+        return self.server.is_trusted_proxy(self.client_address[0])
+
+    @property
+    def address(self):
+        """The visitor's address: the one the trusted proxy saw, otherwise the connection's."""
+        peer = self.client_address[0]
+        if self.behind_proxy:
+            try:
+                return str(ipaddress.ip_address(self.headers.get("X-Forwarded-For", "").split(",")[-1].strip()))
+            except ValueError:
+                pass
+        return peer
+
+    @property
+    def secure(self):
+        return self.behind_proxy and self.headers.get("X-Forwarded-Proto", "") == "https"
+
+    def address_string(self):
+        return self.address
 
     def respond(self, status, mime, body, cookie=None):
         self.send_response(status)
@@ -243,7 +287,7 @@ class AccountHandler(BaseHTTPRequestHandler):
             tag = "-"
         unsigned = f"{subject}.{expires}.{nonce}.{tag}"
         value = f"{unsigned}.{self.server.signature(unsigned)}"
-        cookie = f"{COOKIE}={value}; Path=/; Max-Age={WEB_SESSION_LIFETIME}; HttpOnly; SameSite=Strict"
+        cookie = f"{COOKIE}={value}; Path=/; Max-Age={WEB_SESSION_LIFETIME}; HttpOnly; SameSite=Strict" + ("; Secure" if self.secure else "")
         return nonce, cookie
 
     def captcha_block(self):
@@ -279,7 +323,7 @@ class AccountHandler(BaseHTTPRequestHandler):
 <label>Confirm password <input name="confirm" type="password" autocomplete="new-password" maxlength="128" required></label>
 """ + (self.captcha_block() if self.server.captcha_enabled else ""), "Create account") + self.form("logout", nonce, "", "Back to sign in", "secondary")
         else:
-            challenge = self.captcha_block() if self.server.captcha_enabled and self.server.guard.needs_captcha(self.client_address[0]) else ""
+            challenge = self.captcha_block() if self.server.captcha_enabled and self.server.guard.needs_captcha(self.address) else ""
             content = self.form("signin", nonce, """
 <h2>Sign in</h2>
 <p>To create your first account, enter <strong>1</strong> in both fields.</p>
@@ -363,7 +407,7 @@ class AccountHandler(BaseHTTPRequestHandler):
             password = payload.get("password", "")
             if not isinstance(identifier, str) or not isinstance(password, str) or len(identifier) > 255:
                 raise RequestError("Use a valid account name and password.")
-            address = self.client_address[0]
+            address = self.address
             if not self.server.allow_auth(address):
                 self.json_response({"errorCode": 2, "errorMessage": "Too many attempts. Try again shortly."})
                 return
@@ -445,7 +489,7 @@ class AccountHandler(BaseHTTPRequestHandler):
             if action == "logout":
                 self.browser_page(("anonymous", None, ""))
                 return
-            address = self.client_address[0]
+            address = self.address
             guard = self.server.guard
             if action in ("signin", "register", "password") and not self.server.allow_auth(address):
                 raise AccountError("Too many attempts. Try again shortly.")
@@ -507,7 +551,7 @@ class AccountHandler(BaseHTTPRequestHandler):
             self.browser_page(session, message=message)
         elif action == "password":
             self.check_confirmation(fields)
-            address, guard = self.client_address[0], self.server.guard
+            address, guard = self.address, self.server.guard
             if guard.blocked(address, account["name"]):
                 self.log_message("%s", "password change blocked: too many failures")
                 raise AccountError(BLOCKED_MESSAGE)
@@ -539,6 +583,7 @@ def main():
         os.environ.get("ZATHROTH_SERVER_IP", "192.168.1.104"),
         int(os.environ.get("ZATHROTH_GAME_PORT", "7172")),
         captcha=os.environ.get("ZATHROTH_CAPTCHA", "on").lower() != "off",
+        trusted_proxy=os.environ.get("ZATHROTH_TRUSTED_PROXY", ""),
     )
     with server:
         print(f"ZATHROTH Account Manager and game login listening on port {port}", flush=True)

@@ -24,19 +24,23 @@ from storage import MANAGER_NAME, Accounts
 
 
 class Browser:
-    def __init__(self, base):
+    def __init__(self, base, headers=None):
         self.base = base
+        self.headers = headers or {}
         self.opener = build_opener(HTTPCookieProcessor(CookieJar()))
         self.csrf = ""
+        self.response_headers = {}
 
     def request(self, route, data=None, headers=None):
-        request = Request(self.base + route, data=data, headers=headers or {})
+        request = Request(self.base + route, data=data, headers={**self.headers, **(headers or {})})
         try:
             with self.opener.open(request, timeout=20) as response:
                 status, body = response.status, response.read().decode()
+                self.response_headers = response.headers
         except HTTPError as error:
             with error:
                 status, body = error.code, error.read().decode()
+                self.response_headers = error.headers
         if match := re.search(r'name="csrf" value="([0-9a-f]+)"', body):
             self.csrf = match[1]
         return status, body
@@ -272,6 +276,48 @@ class AccountManagerTest(unittest.TestCase):
         status, body = self.browser.form("password", current="Adventure pass", password="Another long pass", confirm="Another long pass")
         self.assertEqual(status, 200, body)
         self.assertIn("Password changed", body)
+
+    def second_server(self, **options):
+        accounts = Accounts(self.db_path, 0, ROOT / "data/XML/vocations.xml")
+        server = AccountServer(("127.0.0.1", 0), accounts, "192.168.1.104", 7172, **options)
+        Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return server, f"http://127.0.0.1:{server.server_port}"
+
+    def test_a_trusted_proxy_identifies_visitors_and_marks_cookies_secure(self):
+        self.game_startup()
+        server, base = self.second_server(trusted_proxy="127.0.0.1")
+        server.accounts.register("adventurer", "adventurer@example.test", "Adventure pass")
+        https = {"X-Forwarded-Proto": "https"}
+        victim = Browser(base, {"X-Forwarded-For": "203.0.113.5", **https})
+        other = Browser(base, {"X-Forwarded-For": "203.0.113.6", **https})
+
+        victim.request("/")
+        self.assertIn("Secure", victim.response_headers["Set-Cookie"])
+        plain = Browser(base, {"X-Forwarded-For": "203.0.113.7"})
+        plain.request("/")
+        self.assertNotIn("Secure", plain.response_headers["Set-Cookie"])
+
+        for _ in range(guard.IP_BLOCK_AFTER):
+            victim.game("adventurer", "wrong password")
+        self.assertEqual(victim.game("adventurer", "Adventure pass")[1]["errorCode"], 2)
+        self.assertIn("session", other.game("adventurer", "Adventure pass")[1])
+
+        garbled = Browser(base, {"X-Forwarded-For": "not an address"})
+        self.assertIn("session", garbled.game("adventurer", "Adventure pass")[1])
+
+    def test_forwarded_headers_from_anyone_else_are_ignored(self):
+        self.game_startup()
+        self.register(self.browser, "adventurer", "adventurer@example.test")
+        spoof = Browser(self.base, {"X-Forwarded-For": "203.0.113.5", "X-Forwarded-Proto": "https"})
+        spoof.request("/")
+        self.assertNotIn("Secure", spoof.response_headers["Set-Cookie"])
+        for index in range(guard.IP_BLOCK_AFTER):
+            spoof.headers["X-Forwarded-For"] = f"203.0.113.{index + 10}"
+            spoof.game("adventurer", "wrong password")
+        spoof.headers["X-Forwarded-For"] = "198.51.100.99"
+        self.assertEqual(spoof.game("adventurer", "Adventure pass")[1]["errorCode"], 2)
 
     def test_idle_and_slow_connections_are_cut_off(self):
         with mock.patch.object(account_server, "REQUEST_DEADLINE", 1):

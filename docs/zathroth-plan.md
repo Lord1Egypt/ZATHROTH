@@ -19,13 +19,14 @@ step starts only when the one before it is done and verified.
 
 ## 2. Security review of the browser account manager, and a CAPTCHA
 
-Status: done except HTTPS (needs the owner's decision, see below). Done:
+Status: done. HTTPS is built (Caddy `https` compose profile) but stays off until the No-IP host name exists; to switch it on, see the README. Done:
 self-hosted CAPTCHA on registration and after 3 failed sign-ins; failed-login
 blocking per address and per account, also for the game client's login;
 caps on new accounts per address and per hour (browser and in game);
 connection caps and a 30 second connection deadline; common-password check;
-unit tests in CI. Not done: HTTPS, and password recovery (there is none; the
-email is not verified, a lost password needs a god to reset it).
+unit tests in CI; HTTPS through Caddy with the real visitor address and a
+`Secure` cookie. Not done: password recovery (there is none; the email is not
+verified, a lost password needs a god to reset it).
 
 - Review `account_manager/` as internet-facing code: login and registration,
   sessions and CSRF, rate limiting and lockout on failed logins, password

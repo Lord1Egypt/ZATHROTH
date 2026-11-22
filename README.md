@@ -54,9 +54,28 @@ All three ports use TCP.
 | 7171 | Game server status and protocol login listener |
 | 7172 | Game connection |
 
+## HTTPS
+
+The `https` profile adds a Caddy container that serves the account service over HTTPS on ports 80 and 443. It gets a Let's Encrypt certificate for your host name by itself and renews it.
+
+1. Forward TCP 80 and 443 to the server too, and make sure the host name (for example a No-IP name) already points at your public address.
+2. Add this to `.env`:
+
+```dotenv
+ZATHROTH_DOMAIN=yourname.ddns.net
+ZATHROTH_SERVER_IP=yourname.ddns.net
+COMPOSE_PROFILES=https
+```
+
+3. Run `./up.sh`. Players open `https://yourname.ddns.net/` in a browser, and a client that supports HTTPS logins uses `https://yourname.ddns.net/login`.
+
+Certificates are kept in `database/caddy` (Caddy writes them as root, so removing that folder needs `sudo`). Let's Encrypt limits failed attempts, so check the host name resolves and the ports are forwarded before the first start. Plain HTTP on port 8088 keeps working for clients without HTTPS support; once every client uses HTTPS, remove the 8088 forward from the router. The game connection on 7172 is not HTTPS.
+
+The account service trusts the `X-Forwarded-For` and `X-Forwarded-Proto` headers only from the `proxy` container, so the limits below see each visitor's real address and the session cookie is marked `Secure`.
+
 ## Security
 
-Login and account management still use plain HTTP, so passwords and game session keys are not encrypted on the way. Serve them over HTTPS before inviting players you do not know (see `docs/zathroth-plan.md`).
+Over plain HTTP (port 8088), passwords and game session keys are not encrypted on the way. Use the HTTPS profile above before inviting players you do not know.
 
 The account service and the in-game Account Manager limit abuse:
 

@@ -18,5 +18,6 @@ if ! docker pull -q "$image" >/dev/null 2>&1; then
 	curl -fL "https://github.com/Lord1Egypt/ZATHROTH/releases/download/image/zathroth-$arch.tar.gz" | gunzip | docker load
 fi
 
+mkdir -p database/caddy
 docker compose up -d
 docker compose ps

@@ -1,0 +1,19 @@
+# HTTPS in front of the account service (the "https" compose profile).
+# Caddy asks Let's Encrypt for a certificate for ZATHROTH_DOMAIN the first time
+# it is needed, renews it by itself, and redirects http:// to https://. The
+# domain must already point at this server's public address, and ports 80 and
+# 443 must be forwarded to this machine.
+{
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$ZATHROTH_DOMAIN} {
+	request_body {
+		max_size 32KB
+	}
+	# Sends X-Forwarded-For and X-Forwarded-Proto; the account service trusts
+	# them only from this container (ZATHROTH_TRUSTED_PROXY=proxy).
+	reverse_proxy accounts:8088
+}
