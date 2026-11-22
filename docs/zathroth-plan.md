@@ -56,6 +56,16 @@ verified, a lost password needs a god to reset it).
 
 ## 3. Trim the phone
 
+Done 2026-11-22: all other containers were stopped with restart policy "no"
+(monerostage-wallet-1, infura-explorer-explorer-1, stagenet_monerod_explorer,
+tonapi-explorer-1, tonapi-api-1, monerostage-explorer-1,
+stagenet_monerod_prometheus, stagenet_monerod_nodemapper,
+stagenet_monerod_exporter, stagenet_monerod, stagenet_monerod_tor,
+stagenet_monerod_i2p, stagenet_monerod_grafana; epic-server-linux-epic-1 was
+already stopped). Only Portainer and the two ZATHROTH containers run. Start
+one again with `docker start <name>`. The phone's "load average 18" is a kernel
+artifact (permanently waiting thermal worker threads), not real load.
+
 - Stop every container on ThothOS except Portainer and the two ZATHROTH
   containers (`game`, `accounts`), and stop them from restarting on boot.
 - List the containers and their restart policies before stopping anything,
@@ -70,14 +80,31 @@ use (OTClient Redemption with 15.25 assets, `httpLogin`).
 - Rebrand it (window title, logo, server list entry with the login URL
   `http://zathroth.servegame.com:8088/login`, protocol 1525) and check its
   licence allows redistribution.
-- The client's files are on the owner's Windows PC; edit copies of them and
-  keep the originals.
+- The client is the official 15.25 client in `D:\ZATHROTH` (from
+  dudantas/tibia-client). Done: `conf/config.ini` has the login address
+  `http://zathroth.servegame.com:8088/login.php`, every tibia.com, YouTube,
+  Twitch and CipSoft link now points at the account manager or at a closed local
+  port; the original is in `D:\ZATHROTH_backup_original\conf\config.ini`.
+- The login background is `/images/title.jpg` (1920x1080 JPEG) inside
+  `bin/graphics_resources.rcc`; a copy to edit is `D:\ZATHROTH_edit\title.jpg`.
+  `tools/rcc_replace.py` puts the edited picture back (verified byte-identical
+  round trip). Waiting for the owner's picture, then package the client into
+  `downloads/` on the phone. The client has not been run on Windows by Claude.
 
 ## 5. Client downloads in the browser account manager
+
+Done: files in `downloads/` (zip, 7z, rar, exe, msi) are listed on the account
+manager pages and served from `/downloads/<file>`; the client stays on the
+phone, not on GitHub. `tools/package_client.py` makes the package.
 
 - Add download links for the edited clients to the account manager pages.
 
 ## 6. Make the repository private again
+
+Open question (2026-11-22): the GitHub account is on the Free plan. Free
+private repositories get 2,000 Actions minutes a month, and the arm64 build
+(`ubuntu-24.04-arm`, which makes the phone's image) is probably not available
+to private repositories on the Free plan. Not done until the owner decides.
 
 - Before switching, decide how the phone keeps receiving images: `up.sh`
   downloads the image from the public GitHub release, which stops working
