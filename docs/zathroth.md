@@ -44,6 +44,8 @@ How this server is built, deployed and changed. Read it before editing.
 | God arrows (ID 25757, sudden death over 9x9) and god bolts (ID 25758, lightning storm over the exevo gran mas vis area) kill any monster in one god shot and are never used up; gods get them in a god quiver from `/vipset` | `data/scripts/weapons/scripts/zathroth_god_ammo.lua`, `zathrothGodKill` in `zathroth_vip.lua`, item entries in `items.xml`, 25757 alias removed in `Item::CreateItem` (`src/items/item.cpp`) |
 | `/setatkspeed N`, `/lootrate N`, `/exprate N`, `/spawn N` server-wide multipliers, saved in the KV store (`zathroth-rates`) and restored at startup | `data/scripts/lib/zathroth_rates.lua`, `data/scripts/globalevents/zathroth_rates.lua`, `talkactions/god/server_rates.lua`, `create_spawn.lua`; C++ `Game::setAttackSpeedRate`/`setSpawnRate` used by `Player::getAttackSpeed` and `spawn_monster.cpp`; loot in `getLootRandom` (`data/libs/functions/functions.lua`); experience in `Player:onGainExperience` (`data/events/scripts/player.lua`) |
 | Zathroth Popcorn NPC next to every temple it can fit: sells experience (2 per gold, a number or `all` backpack money, popcorn gift) and popcorn | `data-otservbr-global/npc/zathroth_popcorn.lua`, `globalevents/zathroth_popcorn_spawn.lua` |
+| `/addlevel player levels` god command | `data/scripts/talkactions/god/add_level.lua` |
+| VIP accounts: Canary's `/vip adddays, player, days` with `vipSystemEnabled = true` (+50% experience, loot and skill gain, no idle kick) | `config.lua.dist`, `data/scripts/talkactions/god/manage_vip.lua` |
 | `/addpremium player, days` and `/promote player` god commands | `data/scripts/talkactions/god/add_premium.lua`, `promote.lua` |
 | Gods may attack players | `cannotattackplayer="0"` for group 6 in `data/XML/groups.xml` |
 | `/addcoins player, amount` god command | `data/scripts/talkactions/god/add_coins.lua` |
@@ -68,6 +70,7 @@ Existing god commands worth knowing: `/addskill player, level|magic|club|sword|a
 - The store defaults offers to transferable coins, and the 15.25 client refuses an offer when the transferable balance is short even though the server accepts regular and transferable coins combined. `/addcoins` therefore adds transferable coins.
 - Gods have `notgainexperience`, but that only blocks experience from kills; `player:addExperience` still works on them.
 - A promotion survives login only while the account is premium (`data/scripts/creaturescripts/player/login.lua`, KV `promoted`).
+- The phone's clone may carry local edits to `config.lua.dist`; deploy with `git stash && git pull && git stash pop` instead of overwriting them.
 - `!commands` lists every talkaction the player's group can use; give new commands a `setDescription`.
 - Items: new item IDs need client sprites. Custom gear uses existing IDs with per-item attributes (`ITEM_ATTRIBUTE_NAME`, `DESCRIPTION`, `ARMOR`, `ATTACK`, `DEFENSE`, `WEIGHT`, tier), as `/vipset` does.
 - Database migrations in `data-otservbr-global/migrations/` stop at 59, the SQLite baseline; new SQLite schema changes go in migrations numbered 60 and up and must be valid SQLite.
