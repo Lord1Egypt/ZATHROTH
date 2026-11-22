@@ -66,6 +66,12 @@ services:
       - host_ip: *bind-ip
         published: "${ZATHROTH_ACCOUNT_PORT:-8088}"
         target: "${ZATHROTH_ACCOUNT_PORT:-8088}"
+      # The same website and client login on the standard HTTP port, so
+      # http://<host>/ works without :8088. The https profile below also wants
+      # port 80: set ZATHROTH_WEB_PORT to a free port before enabling it.
+      - host_ip: *bind-ip
+        published: "${ZATHROTH_WEB_PORT:-80}"
+        target: "${ZATHROTH_ACCOUNT_PORT:-8088}"
     depends_on:
       game:
         condition: service_healthy

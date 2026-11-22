@@ -51,12 +51,13 @@ All three ports use TCP.
 | Port | Purpose |
 | --- | --- |
 | 8088 | Account manager and client HTTP login |
+| 80 | The same account manager and login on the standard HTTP port (`ZATHROTH_WEB_PORT`), so `http://<host>/` works |
 | 7171 | Game server status and protocol login listener |
 | 7172 | Game connection |
 
 ## HTTPS (optional)
 
-The `https` profile adds a Caddy container that serves the account service over HTTPS on ports 80 and 443. It gets a Let's Encrypt certificate for your host name by itself and renews it.
+The `https` profile adds a Caddy container that serves the account service over HTTPS on ports 80 and 443. It gets a Let's Encrypt certificate for your host name by itself and renews it. The account service also listens on port 80 by default; set `ZATHROTH_WEB_PORT` to a free port (for example 8080) before enabling this profile, since Caddy needs port 80.
 
 1. Forward TCP 80 and 443 to the server too, and make sure the host name (for example a No-IP name) already points at your public address.
 2. Add this to `.env`:
