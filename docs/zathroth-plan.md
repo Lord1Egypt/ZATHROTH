@@ -95,10 +95,11 @@ use (OTClient Redemption with 15.25 assets, `httpLogin`).
   the `storeimages` cache) is in `downloads/` on the phone. The client has not
   been run on Windows by Claude.
 - Store icons: the client loads them from `coinImagesURL` (`config.lua.dist`,
-  currently `http://127.0.0.1/images/store/`, so none load) as
+  now built from `ZATHROTH_SERVER_IP`) as
   `<base>/64/<name>.png` (products) and `<base>/13/<name>.png` (categories).
   The catalog uses OTClient-style names; CipSoft's host refuses outside
-  downloads and the AAC packages in `D:\AAC` do not contain the icons. Open.
+  downloads and the AAC packages in `D:\AAC` do not contain the icons. Done: generated placeholder tiles in `store-images/`, served by the account
+  service; real icons with the same names replace them.
 
 ## 5. Client downloads in the browser account manager
 
@@ -110,18 +111,11 @@ phone, not on GitHub. `tools/package_client.py` makes the package.
 
 ## 6. Make the repository private again
 
-Open question (2026-11-22): the GitHub account is on the Free plan. Free
-private repositories get 2,000 Actions minutes a month, and the arm64 build
-(`ubuntu-24.04-arm`, which makes the phone's image) is probably not available
-to private repositories on the Free plan. Not done until the owner decides.
-
-- Before switching, decide how the phone keeps receiving images: `up.sh`
-  downloads the image from the public GitHub release, which stops working
-  for anonymous downloads once the repository is private. Options: a
-  read-only token on the phone for ghcr.io or the release, or another image
-  host.
-- Canary is GPL-2.0: anyone who receives the server program can ask for its
-  source.
+Decision (2026-11-22): the owner chose to keep the repository public. Free
+private repositories probably cannot use the arm64 runners that build the
+phone's image, and `up.sh` downloads the image from the public release. Nothing
+secret is in the repository (passwords live in ignored files; the client zip is
+hosted on MediaFire, not in Git). Reopen only if that changes.
 
 ## 7. Store the edited clients
 
